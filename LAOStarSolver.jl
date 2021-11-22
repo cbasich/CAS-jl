@@ -59,7 +59,6 @@ function expand(ℒ::LAOStarSolver,
     if terminal(M, M.S[s])
         return 0
     end
-
     count = 0
     if s ∉ keys(ℒ.π)
         bellman_update(ℒ, M, s)
@@ -129,6 +128,9 @@ function solve(ℒ::LAOStarSolver,
                 break
             end
             if error < ℒ.ϵ
+                if !haskey(ℒ.π, s)
+                    println(M.S[s])
+                end
                 return ℒ.π[s], total_expanded
             end
         end
