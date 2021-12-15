@@ -124,6 +124,7 @@ function solve(ℒ::LAOStarSolver,
         while true
             empty!(visited)
             error = test_convergence(ℒ, M, s, visited)
+            # println(error)
             if error > ℒ.dead_end_cost
                 break
             end

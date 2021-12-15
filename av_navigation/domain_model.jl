@@ -1,6 +1,6 @@
 import Base.==
 
-include("utils.jl")
+include("maps.jl")
 include("../LAOStarSolver.jl")
 
 DIRECTIONS = ['↑', '←', '↓', '→']
@@ -305,7 +305,7 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
     T = Vector{Tuple{Int, Float64}}()
 
     edge = G.edges[state.u][state.v]
-    p_arrived = (1 / edge["length"])
+    p_arrived = (1 / edge["length"]) * (0.5 + 0.5*edge["num lanes"])
     p_driving = 1 - p_arrived
     p_obstruction = edge["obstruction probability"]
 
@@ -391,9 +391,10 @@ end
 
 function build_model()
     # G = generate_map(filepath)
-    G = generate_dummy_graph()
+    # G = generate_dummy_graph()
+    G = generate_ma_graph()
     init = 1
-    goal = 2
+    goal = 7
     S, s₀, goals = generate_states(G, init, goal)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
@@ -418,4 +419,4 @@ function main()
     solve_model(M)
 end
 
-# main()
+main()
