@@ -46,9 +46,8 @@ function generate_autonomy_profile(𝒟::DomainSSP,
     return κ
 end
 
-function autonomy_cost(state::DomainState,
-                      action::CASaction,
-                           l::Int)
+function autonomy_cost(state::CASstate,
+                      action::CASaction)
     return 1.0                          #TODO: Replace this wih the correct cost.
 end
 ##
@@ -94,9 +93,8 @@ function get_feedback_probability(state::DomainState,
     end
 end
 
-function human_cost(state::DomainState,
-                   action::CASaction,
-                        l::Int)
+function human_cost(state::CASstate,
+                   action::CASaction)
     return 1.0                            #TODO: Replace this with correct cost.
 end
 ##
@@ -191,29 +189,28 @@ function generate_transitions(𝒟, 𝒜, ℱ,
 
             t = 𝒟.T[base_s][base_a]
 
-            p_approve = ℱ.λ[base_s][base_a][action.l]['⊕']
-            p_disapprove = ℱ.λ[base_s][base_a][action.l]['⊖']
-            p_override = ℱ.λ[base_s][base_a][action.l]['⊘']
-            p_null = ℱ.λ[base_s][base_a][action.l]['∅']
-
             if action.l == 0
                 # T[s][a] = transfer_control(𝒟, S, A, state, action)
                 for (sp, p) in t
-                    push!(T[s][a], (sp * 4 + 3, p))
+                    push!(T[s][a], ((sp-1) * 4 + 4, p))
                 end
             elseif action.l == 1
-                push!(T[s][a], (base_s * 4 + 1, p_disapprove))
+                p_approve = ℱ.λ[base_s][base_a][action.l]['⊕']
+                p_disapprove = ℱ.λ[base_s][base_a][action.l]['⊖']
+                push!(T[s][a], ((base_s-1) * 4 + 2, p_disapprove))
                 for (sp, p) in t
-                    push!(T[s][a], (sp * 4, p * p_approve))
+                    push!(T[s][a], ((sp-1) * 4 + 1, p * p_approve))
                 end
             elseif action.l == 2
-                push!(T[s][a], (base_s * 4 + 2, p_override))
+                p_override = ℱ.λ[base_s][base_a][action.l]['⊘']
+                p_null = ℱ.λ[base_s][base_a][action.l]['∅']
+                push!(T[s][a], ((base_s-1) * 4 + 3, p_override))
                 for (sp, p) in t
-                    push!(T[s][a], (sp * 4 + 3, p * p_null))
+                    push!(T[s][a], ((sp-1) * 4 + 4, p * p_null))
                 end
             else
                 for (sp, p) in t
-                    push!(T[s][a], (sp * 4 + 3, p))
+                    push!(T[s][a], ((sp-1) * 4 + 4, p))
                 end
             end
         end
@@ -271,7 +268,7 @@ function solve_model(C::CASSP)
                         zeros(length(C.S)), zeros(length(C.A)))
     a, total_expanded = solve(ℒ, C, C.SIndex[C.s₀])
     println("LAO* expanded $total_expanded nodes.")
-    println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
+    println("Expected cost to goal: $(ℒ.V[C.SIndex[C.s₀]])")
     return ℒ
 end
 
