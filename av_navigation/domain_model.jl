@@ -233,10 +233,10 @@ function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gra
     else
         p = E[state.id][dest_id]["obstruction probability"]
 
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[stat.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[stat.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -252,11 +252,11 @@ function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gr
     if dest_id == -1
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[stat.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"])
         p = E[state.id][dest_id]["obstruction probability"]
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[stat.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -271,11 +271,11 @@ function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::G
     if dest_id == -1
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.id, dest_id, state.θ, true, E[stat.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"])
         p = E[state.id][dest_id]["obstruction probability"]
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, state.θ, false, E[stat.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -398,6 +398,45 @@ function check_transition_validity(ℳ::DomainSSP)
     end
 end
 
+function generate_successor(M::DomainSSP,
+                             s::Integer,
+                             a::Integer)::Integer
+    thresh = rand()
+    p = 0.
+    T = M.T[s][a]
+    for (s′, prob) ∈ T
+        p += prob
+        if p >= thresh
+            return s′
+        end
+    end
+end
+
+function simulate(M::DomainSSP, L)
+    S, A, C = M.S, M.A, M.C
+    c = Vector{Float64}()
+    # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
+    for i ∈ 1:100
+        state = M.s₀
+        episode_cost = 0.0
+        while true
+            s = M.SIndex[state]
+            a = L.π[s]
+            action = A[a]
+            # println("Taking action $action in state $state.")
+            episode_cost += C(M, s, a)
+            state = S[generate_successor(M, s, a)]
+
+            if terminal(M, state)
+                break
+            end
+        end
+
+        push!(c, episode_cost)
+    end
+    println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
+end
+
 function build_model()
     # G = generate_map(filepath)
     # G = generate_dummy_graph()
@@ -428,4 +467,4 @@ function main()
     solve_model(M)
 end
 
-# main()
+main()

@@ -1,8 +1,13 @@
 import Combinatorics
 
-# include("utils.jl")
+using GLM
+using DataFrames
+using CSV
+using HDF5, JLD
+
 include("domain_model.jl")
 include("../LAOStarSolver.jl")
+include("../utils.jl")
 
 struct CASstate
     state::DomainState
@@ -46,9 +51,14 @@ function generate_autonomy_profile(𝒟::DomainSSP,
     return κ
 end
 
-function autonomy_cost(state::CASstate,
-                      action::CASaction)
-    return 0.0
+function autonomy_cost(state::CASstate)
+    if state.σ == '⊕' || state.σ == '∅'
+        return 0.0
+    elseif state.σ == '⊖'
+        return 1.0
+    elseif state.sigma == '⊘'
+        return 3.0
+    end
 end
 ##
 
@@ -65,6 +75,7 @@ function get_state_features(state)
         return [state.p state.o state.v]
     else
         return [state.o state.l]
+    end
 end
 
 function generate_feedback_profile(𝒟::DomainSSP,
@@ -76,16 +87,17 @@ function generate_feedback_profile(𝒟::DomainSSP,
         λ[s] = Dict{Int, Dict{Int, Dict{Char, Float64}}}()
         for (a, action) in enumerate(𝒟.A)
             if typeof(state) == NodeState
-                X, Y = read_data("data\\node_$(action.value).csv")
+                X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
                 fm = @formula(y ~ x1 + x2 + x3 + x4)
             else
                 if action.value ∉ ['↑', '⤉']
                     continue
                 end
-                X, Y = read_date("data\\edge_$(action.value).csv")
+                X, Y = read_data(joinpath(abspath(@__DIR__), "data", "edge_$(action.value).csv"))
                 fm = @formula(y ~ x1 + x2 + x3)
             end
 
+            insufficient_data = false
             try
                 logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
             catch
@@ -101,7 +113,8 @@ function generate_feedback_profile(𝒟::DomainSSP,
                         continue
                     end
 
-                    q = DataFrame(hcat(f, l))
+                    q = DataFrame(hcat(f, l), :auto)
+                    p = 0.5
                     try
                         p = predict(logit, q)[1]
                     catch
@@ -119,23 +132,12 @@ function generate_feedback_profile(𝒟::DomainSSP,
     return λ
 end
 
-function get_feedback_probability(state::DomainState,
-                                 action::DomainAction,
-                                      l::Int,
-                                      σ::Char)
-    # F = get_feature_vector(state)
-    if l == 1 && σ == '⊕'
-        return 1.0
-    elseif l == 2 && σ == '∅'
-        return 1.0
-    else
-        return 0.0
-    end
+function save_feedback_profile(λ)
+    save(joinpath(abspath(@__DIR__),"params.jld"), "λ", λ)
 end
 
-function human_cost(state::CASstate,
-                   action::CASaction)
-    return [3 2 1 0][action.l + 1]
+function human_cost(action::CASaction)
+    return [3 2 1 0][action.l + 1]              #TODO: Fix this.
 end
 ##
 
@@ -209,18 +211,19 @@ function generate_actions(D, A)
     return actions
 end
 
-function generate_transitions(𝒟, 𝒜, ℱ, C,
+function generate_transitions!(𝒟, 𝒜, ℱ, C,
                               S::Vector{CASstate},
                               A::Vector{CASaction},
                               G::Set{CASstate})
 
-    T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
+    T = C.T
     κ, λ = 𝒜.κ, ℱ.λ
     for (s, state) in enumerate(S)
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
         for (a, action) in enumerate(A)
             if state in G
-                T[s][a] = [(s, 1.0)]
+                state′ = CASstate(state.state, '∅')
+                T[s][a] = [(C.SIndex[state′], 1.0)]
                 continue
             end
 
@@ -230,16 +233,14 @@ function generate_transitions(𝒟, 𝒜, ℱ, C,
             base_a = 𝒟.AIndex[base_action]
 
             t = 𝒟.T[base_s][base_a]
-            if t = [(base_s, 1.0)] || action.l ∉ κ[base_s][base_a]
+            if t == [(base_s, 1.0)] || action.l ∉ κ[base_s][base_a]
+                T[s][a] = [(s, 1.0)]
                 continue
             end
 
             T[s][a] = Vector{Tuple{Int, Float64}}()
             if action.l == 0
-                # T[s][a] = transfer_control(𝒟, S, A, state, action)
-                for (sp, p) in t
-                    push!(T[s][a], ((sp-1) * 4 + 4, p))
-                end
+                T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 4 + 4 , 1.0)]
             elseif action.l == 1
                 p_approve = λ[base_s][base_a][1]['⊕']
                 p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
@@ -248,10 +249,9 @@ function generate_transitions(𝒟, 𝒜, ℱ, C,
                     push!(T[s][a], ((sp-1) * 4 + 1, p * p_approve))
                 end
             elseif action.l == 2
-                p_override = λ[base_s][base_a][2l]['⊘']
+                p_override = λ[base_s][base_a][2]['⊘']
                 p_null = 1.0 - p_override #λ[base_s][base_a][2]['∅']
-                append!(T[s][a], (T[s][C.AIndex[CASaction(action.action, 0)]] .* p_override))
-                # push!(T[s][a], ((base_s-1) * 4 + 3, p_override))
+                append!(T[s][a], ( (x, y * p_override) for (x,y) in T[s][C.AIndex[CASaction(action.action, 0)]]))
                 for (sp, p) in t
                     push!(T[s][a], ((sp-1) * 4 + 4, p * p_null))
                 end
@@ -262,25 +262,6 @@ function generate_transitions(𝒟, 𝒜, ℱ, C,
             end
         end
     end
-
-    return T
-end
-
-function generate_cas_probability(state::DomainState,
-                                 action::DomainAction,
-                                      σ::Char)
-    if l == 0
-        return 1.0
-    elseif l == 1 && (σ == '⊘' || σ == '∅')
-        return 0.0
-    elseif l == 2 && (σ == '⊕' || σ == '⊖')
-        return 0.0
-    else
-
-    end
-    λ = ℱ.λ
-    p = λ(state, action, σ)
-
 end
 
 function generate_costs(C::CASSP,
@@ -289,8 +270,8 @@ function generate_costs(C::CASSP,
     D, A, F = C.𝒮.D, C.𝒮.A, C.𝒮.F
     state, action = C.S[s], C.A[a]
     cost = D.C(D, D.SIndex[state.state], D.AIndex[action.action])
-    cost += A.μ(state, action)
-    cost += F.ρ(state, action)
+    cost += A.μ(state)
+    cost += F.ρ(action)
     return cost
 end
 
@@ -304,9 +285,12 @@ function build_cas(𝒟::DomainSSP,
     𝒮 = CAS(𝒟, 𝒜, ℱ)
     S, s₀, G = generate_states(𝒟, ℱ)
     A = generate_actions(𝒟, 𝒜)
-    T = generate_transitions(𝒟, 𝒜, ℱ, S, A, G)
+    T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
 
-    𝒮 = CASSP(𝒮, S, A, T, generate_costs, s₀, G)
+    C = CASSP(𝒮, S, A, T, generate_costs, s₀, G)
+    generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
+
+    return C
 end
 
 function solve_model(C::CASSP)
@@ -319,10 +303,26 @@ function solve_model(C::CASSP)
     return ℒ
 end
 
+
+function init_data()
+    for action in ["←", "↑", "→", "⤉"]
+        init_node_data(joinpath(abspath(@__DIR__), "data", "node_$action.csv"))
+    end
+
+    init_edge_data(joinpath(abspath(@__DIR__), "data", "edge_↑.csv"))
+    init_edge_data(joinpath(abspath(@__DIR__), "data", "edge_⤉.csv"))
+end
+
 function main()
+    init_data()
+
     M = build_model()
     C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
     ℒ = solve_model(C)
+
+    save_feedback_profile(C.𝒮.F.λ)
 end
+
+@show load(joinpath(abspath(@__DIR__), "params.jld"), "λ")
 
 main()
