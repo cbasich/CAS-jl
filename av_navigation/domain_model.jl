@@ -49,6 +49,7 @@ struct EdgeState
     v::Int
     θ::Char
     o::Bool
+    l::Int
 end
 function EdgeState()
     return EdgeState(false, -1, -1)
@@ -62,7 +63,7 @@ function ==(a::NodeState, b::NodeState)
 end
 function ==(a::EdgeState, b::EdgeState)
     return (isequal(a.u, b.u) && isequal(a.v, b.v) &&
-            isequal(a.o, b.o))
+            isequal(a.o, b.o) && isequal(a.l, b.l))
 end
 function ==(a::NodeState, b::EdgeState)
     return false
@@ -84,6 +85,7 @@ function Base.hash(a::EdgeState, h::UInt)
     h = hash(a.u, h)
     h = hash(a.v, h)
     h = hash(a.o, h)
+    h = hash(a.l, h)
     return h
 end
 
@@ -161,7 +163,8 @@ function generate_states(G::Graph,
     for u in keys(E)
         for v in keys(E[u])
             for o in [false, true]
-                state = EdgeState(u, v, E[u][v]["direction"], o)
+                state = EdgeState(u, v, E[u][v]["direction"],
+                                     o, E[u][v]["num lanes"])
                 push!(S, state)
             end
         end
@@ -228,12 +231,12 @@ function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gra
     if dest_id == -1
         return [(s, 1.0)]
     else
-        p = G.edges[state.id][dest_id]["obstruction probability"]
+        p = E[state.id][dest_id]["obstruction probability"]
 
-        state′ = EdgeState(state.id, dest_id, θ′, true)
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[stat.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false)
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[stat.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -249,11 +252,11 @@ function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gr
     if dest_id == -1
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.id, dest_id, θ′, true)
-        p = G.edges[state.id][dest_id]["obstruction probability"]
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[stat.id][dest_id]["num lanes"])
+        p = E[state.id][dest_id]["obstruction probability"]
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false)
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[stat.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -261,16 +264,18 @@ end
 
 function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
     T = Vector{Tuple{Int, Float64}}()
-    dest_id = G.nodes[state.id][state.θ]
+
+    N, E = G.nodes, G.edges
+    dest_id = N[state.id][state.θ]
 
     if dest_id == -1
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.id, dest_id, state.θ, true)
-        p = G.edges[state.id][dest_id]["obstruction probability"]
+        state′ = EdgeState(state.id, dest_id, state.θ, true, E[stat.id][dest_id]["num lanes"])
+        p = E[state.id][dest_id]["obstruction probability"]
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, state.θ, false)
+        state′ = EdgeState(state.id, dest_id, state.θ, false, E[stat.id][dest_id]["num lanes"])
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -304,21 +309,23 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
     end
     T = Vector{Tuple{Int, Float64}}()
 
-    edge = G.edges[state.u][state.v]
+    N, E = G.nodes, G.edges
+
+    edge = E[state.u][state.v]
     p_arrived = (1 / edge["length"]) * (0.5 + 0.5*edge["num lanes"])
     p_driving = 1 - p_arrived
     p_obstruction = edge["obstruction probability"]
 
     mass = 0.0
 
-    state′ = EdgeState(state.u, state.v, state.θ, true)
+    state′ = EdgeState(state.u, state.v, state.θ, true, edge["num lanes"])
     push!(T, (M.SIndex[state′], p_driving * p_obstruction))
     mass += p_driving * p_obstruction
-    state′ = EdgeState(state.u, state.v, state.θ, false)
+    state′ = EdgeState(state.u, state.v, state.θ, false, edge["num lanes"])
     push!(T, (M.SIndex[state′], p_driving * (1 - p_obstruction)))
     mass += p_driving * (1 - p_obstruction)
 
-    node = G.nodes[state.v]
+    node = N[state.v]
     p_ped = node["pedestrian probability"]
     p_occl = node["occlusion probability"]
     p_vehicles = node["vehicle probabilities"]
@@ -340,12 +347,14 @@ end
 function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
     T = Vector{Tuple{Int, Float64}}()
 
+    N, E = G.nodes, G.edges
+
     if state.o == false
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.u, state.v, state.θ, false)
+        num_lanes = E[state.u][state.v]["num lanes"]
+        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes)
         s′ = M.SIndex[state′]
-        num_lanes = G.edges[state.u][state.v]["num lanes"]
         p = 1.0
         if num_lanes == 1
             p = 0.2
