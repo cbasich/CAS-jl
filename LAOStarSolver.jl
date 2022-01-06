@@ -31,7 +31,11 @@ function backup(ℒ::LAOStarSolver,
                 M,
                 s::Integer)
     for a = 1:length(M.A)
-        ℒ.Qs[a] = lookahead(ℒ, M, s, a)
+        if !allowed(M, s, a)
+            ℒ.Qs[a] = 100.0
+        else
+            ℒ.Qs[a] = lookahead(ℒ, M, s, a)
+        end
     end
     a = Base.argmin(ℒ.Qs)
     return a, ℒ.Qs[a]
@@ -137,6 +141,6 @@ function solve(ℒ::LAOStarSolver,
         end
         iter += 1
     end
-    println("Total nodes expanded: $total_expanded")
+    # println("Total nodes expanded: $total_expanded")
     return ℒ.π[s], total_expanded
 end

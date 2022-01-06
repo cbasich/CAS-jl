@@ -93,7 +93,7 @@ function generate_states()
                     for p in [false, true]
                         state = DomainState(pos, o, t, d, p)
                         push!(S, state)
-                        if pos == 3
+                        if pos == 4
                             push!(G, state)
                         end
                     end

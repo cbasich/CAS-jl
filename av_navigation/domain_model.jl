@@ -1,5 +1,7 @@
 import Base.==
 
+using Statistics
+
 include("maps.jl")
 include("../LAOStarSolver.jl")
 
@@ -416,14 +418,14 @@ function simulate(M::DomainSSP, L)
     S, A, C = M.S, M.A, M.C
     c = Vector{Float64}()
     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
-    for i ∈ 1:100
+    for i ∈ 1:1
         state = M.s₀
         episode_cost = 0.0
         while true
             s = M.SIndex[state]
             a = L.π[s]
             action = A[a]
-            # println("Taking action $action in state $state.")
+            println("Taking action $action in state $state.")
             episode_cost += C(M, s, a)
             state = S[generate_successor(M, s, a)]
 
@@ -462,9 +464,8 @@ function solve_model(M::DomainSSP)
     return ℒ
 end
 
-function main()
-    M = build_model()
-    solve_model(M)
-end
+# M = build_model()
+# L = solve_model(M)
+# simulate(M, L)
 
-main()
+# main_dm()
