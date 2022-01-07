@@ -89,8 +89,8 @@ function update_autonomy_profile!(C, ℒ)
                             break
                         end
                     end
-                    if L[i] == 3 && C.𝒮.F.λ[s][a][2]['∅'] < 0.85
-                        println("Error:      ", s, " | ", a, " | ", C.𝒮.F.λ[s][a][2]['∅'])
+                    if L[i] == competence(state, action)
+                        println("Updated to competence: $(κ[s][a]) | $(L[i])")
                     end
                     κ[s][a] = L[i]
                     C.potential[s][a][L[i] + 1] = 0.0
@@ -544,7 +544,7 @@ function simulate(M::CASSP, L)
         while true
             s = M.SIndex[state]
             # println(state, "     ", s)
-            a = L.π[s]
+            a = solve(L, C, s)
             action = A[a]
             println("Taking action $action in state $state.")
             if action.l == 0 || action.l == 3
@@ -663,15 +663,21 @@ function run_episodes()
 end
 
 run_episodes()
-# main()
-#
 
+
+
+M = build_model()
+C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+ℒ = solve_model(C)
+update_autonomy_profile!(C,ℒ)
+generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 function debug_competence(C, L)
     κ, λ, D = C.𝒮.A.κ, C.𝒮.F.λ, C.𝒮.D
-    for s in keys(L.π)
+    for (s, state) in enumerate(C.S)
+        println("**** $s ****")
         state = C.S[s]
         ds = Int(ceil(s/4))
-        a = L.π[s]
+        a = solve(L, C, s)[1]
         action = C.A[a]
         da = Int(ceil(a/4))
         if action.l != competence(state.state, action.action)
@@ -680,19 +686,18 @@ function debug_competence(C, L)
             println("Competence: $(competence(state.state, action.action))")
             println("Kappa: $(κ[ds][da])")
             println("Lambda: $(λ[ds][da])")
+            println("-----------------------")
         end
     end
 end
 
-M = build_model()
-C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+
 debug_competence(C, ℒ)
-@show C.𝒮.F.λ[Int(ceil(5344/4))][1]
+@show C.𝒮.F.λ[Int(ceil(5397/4))][1]
 @show M.S[10]
-@show C.T[3496]
-ℒ = solve_model(C)
+@show C.T[5397][1]
 @show lookahead(ℒ,M, 3496, 1)
-#
+@show C.S[333]
 # state = CASstate(EdgeState(4, 7, '↓', true, 2), '∅')
 # s = C.SIndex[state]
 # sb = C.𝒮.D.SIndex[state.state]

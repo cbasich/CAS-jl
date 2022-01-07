@@ -120,7 +120,7 @@ function solve(ℒ::LAOStarSolver,
             empty!(visited)
             num_expanded = expand(ℒ, M, s, visited)
             total_expanded += num_expanded
-            # println(num_expanded, "               ", total_expanded)
+            println(num_expanded, "               ", total_expanded)
             if num_expanded == 0
                 break
             end
@@ -128,7 +128,7 @@ function solve(ℒ::LAOStarSolver,
         while true
             empty!(visited)
             error = test_convergence(ℒ, M, s, visited)
-            # println(error)
+            println(error)
             if error > ℒ.dead_end_cost
                 break
             end
