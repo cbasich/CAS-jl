@@ -5,7 +5,6 @@ using DataFrames
 using CSV
 using JLD
 
-# include("utils.jl")
 include("domain_model.jl")
 include("../LAOStarSolver.jl")
 include("../utils.jl")
@@ -34,15 +33,7 @@ function generate_autonomy_profile(𝒟::DomainSSP,
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            if state.oncoming == 0
-                κ[s][a] = 3
-            elseif state.oncoming == -1 && action == :go
-                κ[s][a] = 1
-            elseif state.position > 1
-                κ[s][a] = 2
-            else
-                κ[s][a] = 1
-            end
+            κ[s][a] = 1
         end
     end
     return κ
@@ -51,10 +42,10 @@ end
 function update_potential(C, ℒ, s, a, L)
     state = CASstate(C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
-    X = [lookahead(ℒ, C, s2, ((a - 1) * 4 + l + 1) ) for l ∈ L]
+    X = [lookahead(ℒ, C, s2, ((a - 1) * 2 + l + 1) ) for l ∈ L]
     P = softmax(-1.0 .* X)
     for l=1:size(L)[1]
-        C.potential[s][a][L[l]+1] += .75 .* P[l]
+        C.potential[s][a][L[l]+1] += P[l]
     end
     clamp!(C.potential[s][a], 0.0, 1.0)
 end
@@ -63,31 +54,36 @@ function update_autonomy_profile!(C, ℒ)
     κ = C.𝒮.A.κ
     for (s, state) in enumerate(C.𝒮.D.S)
         for (a, action) in enumerate(C.𝒮.D.A)
-            if κ[s][a] == 3 || κ[s][a] == 0
+            if κ[s][a] in [0, 1, competence(state, action)]
                 continue
             end
 
             L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
             update_potential(C, ℒ, s, a, L)
 
-            r = randn()
+            r = rand()
             for i in sortperm(-[C.potential[s][a][l+1] for l in L])
                 if r <= C.potential[s][a][i]
-                    if L[i] == 3
-                        if C.𝒮.F.λ[s][a][2]['∅'] < 0.85
+                    if L[i] == 2
+                        if C.𝒮.F.λ[s][a][1]['∅'] < 0.85
                             break
                         end
                     elseif L[i] == 0
-                        if C.𝒮.F.λ[s][a][1]['⊕'] > 0.35
+                        if C.𝒮.F.λ[s][a][1]['∅'] > 0.35
                             break
                         end
                     end
 
-                    κ[s][a] = L[i]
-                    C.potential[s][a][L[i]+1] = 0.0
-                    if L[2] == 1 && L[i] == 2
-                        C.flags[s][a] = true
+                    if L[i] == competence(state, action)
+                        println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
                     end
+
+                    C.𝒮.A.κ[s][a] = L[i]
+                    C.potential[s][a][L[i]+1] = 0.0
+                    # if L[2] == 1 && L[i] == 2
+                    #     C.flags[s][a] = true
+                    # end
+                    break
                 end
             end
         end
@@ -96,14 +92,30 @@ end
 
 function competence(state::DomainState,
                    action::DomainAction)
-    if state.position < 2 && state.oncoming > 1 && !state.priority
-        return 0
-    elseif state.position < 2 && state.trailing
-        return 0
-    elseif state.position >= 1 && state.oncoming == 2 && !state.priority
-        return 0
+    if action.value == :stop
+        if state.position > 1
+            return 0
+        elseif state.oncoming < 1 && state.trailing
+            return 0
+        else
+            return 2
+        end
+    elseif action.value == :edge
+        if state.position > 0
+            return 0
+        else
+            return 2
+        end
     else
-        return 3
+        if state.oncoming == -1
+            return 0
+        elseif state.oncoming > 1 && !state.priority
+            return 0
+        elseif state.oncoming > 1 && state.priority
+            return 1
+        else
+            return 2
+        end
     end
 end
 
@@ -116,12 +128,10 @@ function load_autonomy_profile()
 end
 
 function autonomy_cost(state::CASstate)
-    if state.σ == '⊕' || state.σ == '∅'
+    if state.σ == '∅'
         return 0.0
-    elseif state.σ == '⊖'
-        return 1.0
     elseif state.σ == '⊘'
-        return 3.0
+        return 50.0
     end
 end
 ##
@@ -135,7 +145,7 @@ struct FeedbackModel
 end
 
 function get_state_features(state::DomainState)
-    return [state.position state.oncoming state.trailing state.dynamic state.priority]
+    return [state.position state.oncoming state.trailing state.priority]
 end
 
 function generate_feedback_profile(𝒟::DomainSSP,
@@ -148,15 +158,19 @@ function generate_feedback_profile(𝒟::DomainSSP,
         for (a, action) in enumerate(𝒟.A)
             λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             X, Y = read_data(joinpath(abspath(@__DIR__), "data", "$(action.value).csv"))
-            fm = @formula(y ~ x1 + x2 + x3 + x4 + x5 + x6)
+            fm = @formula(y ~ x1 + x2 + x3 + x4)
             logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCoding()))
-            logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
-            for l in [1,2]
+            # logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
+            for l in [1]
                 λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
-                    q = DataFrame(hcat(f, l), :auto)
-                    p = predict(logit, q)[1]
-                    if σ == '⊕' || σ == '∅'
+                    q = DataFrame(f, :auto)
+                    if f[1] == -1
+                        p = 0.5
+                    else
+                        p = clamp(predict(logit, q)[1], 0.0, 1.0)
+                    end
+                    if σ == '∅'
                         λ[s][a][l][σ] = p
                     else
                         λ[s][a][l][σ] = 1.0 - p
@@ -176,14 +190,19 @@ function update_feedback_profile!(C)
         for (a, action) in enumerate(𝒟.A)
             λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             X, Y = read_data(joinpath(abspath(@__DIR__), "data", "$(action.value).csv"))
-            fm = @formula(y ~ x1 + x2 + x3 + x4 + x5 + x6)
-            logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
-            for l in [1,2]
+            fm = @formula(y ~ x1 + x2 + x3 + x4)
+            logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCoding()))
+            # logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
+            for l in [1]
                 λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
-                    q = DataFrame(hcat(f, l), :auto)
-                    p = predict(logit, q)[1]
-                    if σ == '⊕' || σ == '∅'
+                    q = DataFrame(f, :auto)
+                    if f[1] == -1
+                        p = 0.5
+                    else
+                        p = clamp(predict(logit, q)[1], 0.0, 1.0)
+                    end
+                    if σ == '∅'
                         λ[s][a][l][σ] = p
                     else
                         λ[s][a][l][σ] = 1.0 - p
@@ -203,7 +222,7 @@ function load_feedback_profile()
 end
 
 function human_cost(action::CASaction)
-    return [10.0 1.0 1.0 0.0][action.l+1]
+    return [100.0 0.0 0.0][action.l+1]
 end
 ##
 
@@ -223,7 +242,7 @@ struct CASSP
     G::Set{CASstate}
     SIndex::Dict{CASstate, Int}
     AIndex::Dict{CASaction, Int}
-    flags::Dict{Int, Dict{Int, Bool}}
+    # flags::Dict{Int, Dict{Int, Bool}}
     potential::Dict{Int, Dict{Int, Vector{Float64}}}
 end
 function CASSP(𝒮::CAS,
@@ -235,9 +254,9 @@ function CASSP(𝒮::CAS,
                G::Set{CASstate})
     SIndex, AIndex = generate_index_dicts(S, A)
     s_length, a_length = size(𝒮.D.S)[1], size(𝒮.D.A)[1]
-    flags = Dict(s => Dict(a => false for a=1:a_length) for s=1:s_length)
+    # flags = Dict(s => Dict(a => false for a=1:a_length) for s=1:s_length)
     potential = Dict(s => Dict(a => [0. for i=1:4] for a=1:a_length) for s=1:s_length)
-    return CASSP(𝒮, S, A, T, C, s₀, G, SIndex, AIndex, flags, potential)
+    return CASSP(𝒮, S, A, T, C, s₀, G, SIndex, AIndex, potential)
 end
 
 function generate_index_dicts(S::Vector{CASstate}, A::Vector{CASaction})
@@ -259,7 +278,7 @@ function generate_states(D, F)
         for σ in F.Σ
             new_state = CASstate(state, σ)
             push!(states, new_state)
-            if state in D.G
+            if state in D.G && σ == '∅'
                 push!(G, new_state)
             end
         end
@@ -282,6 +301,11 @@ function generate_actions(D, A)
     return actions
 end
 
+function allowed(C, s::Int,
+                    a::Int)
+    return C.A[a].l in [0, C.𝒮.A.κ[ceil(s/2)][ceil(a/3)]]
+end
+
 function generate_transitions!(𝒟, 𝒜, ℱ, C,
                               S::Vector{CASstate},
                               A::Vector{CASaction},
@@ -292,10 +316,15 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
     for (s, state) in enumerate(S)
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
         for (a, action) in enumerate(A)
-            if state in G
+            if state.state in 𝒟.G
                 state′ = CASstate(state.state, '∅')
                 T[s][a] = [(C.SIndex[state′], 1.0)]
                 continue
+            end
+
+            if state.state.position == -1
+                state′ = CASstate(last(𝒟.S), '∅')
+                T[s][a] = [(C.SIndex[state′], 1.0)]
             end
 
             base_state = state.state
@@ -304,49 +333,76 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_a = 𝒟.AIndex[base_action]
 
             t = 𝒟.T[base_s][base_a]
-            if t == [(base_s, 1.0)] || action.l ∉ [0, κ[base_s][base_a]]
+            if t == [(base_s, 1.0)] #|| action.l ∉ [0, κ[base_s][base_a]]
                 T[s][a] = [(s, 1.0)]
                 continue
             end
 
             T[s][a] = Vector{Tuple{Int, Float64}}()
             if action.l == 0
-                state′ = CASstate(DomainState(4, 0, 0, state.state.dynamic, 0), '∅')
-                push!(T[s][a], (C.SIndex[state′], 1.0))
+                T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 2 + 2 , 1.0)]
+                # state′ = CASstate(DomainState(4, 0, 0, state.state.dynamic, 0), '∅')
+                # push!(T[s][a], (C.SIndex[state′], 1.0))
+            # elseif action.l == 1
+            #     # println(base_s, " | ", base_a)
+            #     p_approve = ℱ.λ[base_s][base_a][1]['⊕']
+            #     p_disapprove = 1.0 - p_approve
+            #     push!(T[s][a], ((base_s-1) * 4 + 2, p_disapprove))
+            #     for (sp, p) in t
+            #         push!(T[s][a], ((sp-1) * 4 + 1, p * p_approve))
+            #     end
             elseif action.l == 1
-                p_approve = ℱ.λ[base_s][base_a][1]['⊕']
-                p_disapprove = 1.0 - p_approve
-                push!(T[s][a], ((base_s-1) * 4 + 2, p_disapprove))
-                for (sp, p) in t
-                    push!(T[s][a], ((sp-1) * 4 + 1, p * p_approve))
-                end
-            elseif action.l == 2
-                p_override = ℱ.λ[base_s][base_a][2]['⊘']
+                p_override = ℱ.λ[base_s][base_a][1]['⊘']
                 p_null = 1.0 - p_override
                 state′ = CASstate(DomainState(4, 0, 0, state.state.dynamic, 0), '⊘')
                 push!(T[s][a], (C.SIndex[state′], p_override))
                 for (sp, p) in t
-                    push!(T[s][a], ((sp-1) * 4 + 4, p * p_null))
+                    push!(T[s][a], ((sp-1) * 2 + 2, p * p_null))
                 end
             else
                 for (sp, p) in t
-                    push!(T[s][a], ((sp-1) * 4 + 4, p))
+                    push!(T[s][a], ((sp-1) * 2 + 2, p))
                 end
             end
         end
     end
 end
 
-function block_transitioN!(C::CASSP,
+function check_transition_validity(C)
+    S, A, T = C.S, C.A, C.T
+    for (s, state) in enumerate(S)
+        for (a, action) in enumerate(A)
+            mass = 0.0
+            for (s′, p) in T[s][a]
+                mass += p
+                if p < 0.0
+                    println("Transition error at state index $s and action index $a")
+                    println("with a negative probability of $p.")
+                    println("State: $(S[i])")
+                    println("Action: $(A[j])")
+                    @assert false
+                end
+            end
+            if round(mass; digits=4) != 1.0
+                println("Transition error at state $state and action $action.")
+                println("State index: $s      Action index: $a")
+                println("Total probability mass of $mass.")
+                println("Transition vector is the following: $(T[s][a])")
+                println("Succ state vector: $([S[s] for (s,p) in T[s][a]])")
+                @assert false
+            end
+        end
+    end
+end
+
+function block_transition!(C::CASSP,
                        state::CASstate,
                       action::CASaction)
     T = C.T
-    state′ = CASstate(state.state, '⊕')
+    state′ = CASstate(state.state, '⊘')
     s, a = C.SIndex[state], C.AIndex[action]
     T[s][a] = [(s, 1.0)]
     T[s+1][a] = [(s+1, 1.0)]
-    T[s+2][a] = [(s+2, 1.0)]
-    T[s+3][a] = [(s+3, 1.0)]
 end
 
 function generate_costs(C::CASSP,
@@ -360,8 +416,8 @@ function generate_costs(C::CASSP,
     return cost
 end
 
-function generate_feedback(state::CASstate,
-                          action::CASaction)
+function generate_feedback(state::DomainState,
+                          action::DomainAction)
     # if randn() <= 0.05
     #     if action.l == 1
     #         return ['⊕', '⊖'][rand(1:2)]
@@ -369,15 +425,28 @@ function generate_feedback(state::CASstate,
     #         return ['∅', '⊘'][rand(1:2)]
     #     end
     # end
-
-    if state.position < 2 && state.oncoming > 1 && !state.priority
-        return (action.l == 1) ? '⊖' : '⊘'
-    elseif state.position < 2 && state.trailing
-        return (action.l == 1) ? '⊖' : '⊘'
-    elseif state.position >= 1 && state.oncoming == 2 && !state.priority
-        return (action.l == 1) ? '⊖' : '⊘'
+    if action.value == :stop
+        if state.position > 1
+            return '⊘'
+        elseif state.oncoming < 1 && state.trailing
+            return '⊘''
+        else
+            return '∅'
+        end
+    elseif action.value == :edge
+        if state.position > 0
+            return '⊘'
+        else
+            return '∅'
+        end
     else
-        return (action.l == 1) ? '⊕' : '⊖'
+        if state.oncoming == -1
+            return '⊘'
+        elseif state.oncoming > 1 && !state.priority
+            return '⊘'
+        else
+            return '∅'
+        end
     end
 end
 
@@ -422,43 +491,41 @@ function simulate(M::CASSP, L)
             # println(state, "     ", s)
             a = L.π[s]
             action = A[a]
-            println("Taking action $action in state $state.")
-            if action.l == 0 || action.l == 3
+            # println("Taking action $action in state $state.")
+            if action.l == 0 || action.l == 2
                 σ = '∅'
-            elseif action.l == 1
-                σ = generate_feedback(state, action)
-                y = (σ == '⊕') ? 1 : 0
-                d = hcat(get_state_features(state.state), 1, y)
-                if typeof(state.state) == NodeState
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                else
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
-                end
-            elseif action.l == 2 || (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
-                σ = generate_feedback(state, action)
-                y = (σ == '∅') ? 1 : 0
-                d = hcat(get_state_features(state.state), 2, y)
-                if typeof(state.state) == NodeState
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                else
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
-                end
+            else
+                σ = generate_feedback(state.state, action.action)
+                y = (σ == '∅')
+                d = hcat(get_state_features(state.state), y)
+                record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
             end
-            println("received feedback: $σ")
+            # if action.l == 1
+            #     σ = generate_feedback(state, action)
+            #     y = (σ == '⊕') ? 1 : 0
+            #     d = hcat(get_state_features(state.state), 1, y)
+            #     record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
+            # elseif action.l == 2 || (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
+            #     σ = generate_feedback(state, action)
+            #     y = (σ == '∅') ? 1 : 0
+            #     d = hcat(get_state_features(state.state), 2, y)
+            #     record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
+            # end
+            # println("received feedback: $σ")
             episode_cost += C(M, s, a)
-            if σ == '⊖'
-                block_transition!(M, state, action)
-                state = CASstate(state.state, '∅')
-                # M.s₀ = state
-                L = solve_model(M)
-                continue
-            end
+            # if σ == '⊖'
+            #     block_transition!(M, state, action)
+            #     state = CASstate(state.state, '∅')
+            #     # M.s₀ = state
+            #     L = solve_model(M)
+            #     continue
+            # end
             if action.l == 0 || σ == '⊘'
                 state = M.S[M.T[s][a][1][1]]
             else
                 state = generate_successor(M.𝒮.D, state, action, σ)
             end
-            println(σ, "     | succ state |      ", state)
+            # println(σ, "     | succ state |      ", state)
             if terminal(M, state)
                 break
             end
@@ -491,7 +558,7 @@ function build_cas(𝒟::DomainSSP,
 
     C = CASSP(𝒮, S, A, T, generate_costs, s₀, G)
     generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
-
+    check_transition_validity(C)
     return C
 end
 
@@ -500,39 +567,41 @@ function solve_model(C::CASSP)
                         zeros(length(C.S)), zeros(length(C.S)),
                         zeros(length(C.S)), zeros(length(C.A)))
     a, total_expanded = solve(ℒ, C, C.SIndex[C.s₀])
-    println("LAO* expanded $total_expanded nodes.")
-    println("Expected cost to goal: $(ℒ.V[C.SIndex[C.s₀]])")
+    # println("LAO* expanded $total_expanded nodes.")
+    # println("Expected cost to goal: $(ℒ.V[C.SIndex[C.s₀]])")
     return ℒ
 end
 
 function init_data()
-    for action in ["stop", "edge", "go"]
+    for action in [:stop, :edge, :go]
         init_pass_obstacle_data(joinpath(abspath(@__DIR__), "data", "$action.csv"))
     end
 end
 
 function run_episodes()
     M = build_model()
-    C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+    C = build_cas(M, [0,1,2], ['⊘', '∅'])
 
     los = Vector{Float64}()
     costs = Vector{Float64}()
-    for i=1:1
-        println(i)
+    for i=1:500
         ℒ = solve_model(C)
-        push!(los, compute_level_optimality(C, ℒ))
+        lo = compute_level_optimality(C, ℒ)
+        println(i, "  |  ", lo)
+        push!(los, lo)
         push!(costs, simulate(C, ℒ))
         update_feedback_profile!(C)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
         update_autonomy_profile!(C, ℒ)
         save_autonomy_profile(C.𝒮.A.κ)
+        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
     end
 
     println(costs)
     println(los)
 end
 M = build_model()
-C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+C = build_cas(M, [0,1,2], ['⊘', '∅'])
 @show C.𝒮.F.λ[10]
 solve_model(M)
 ℒ = solve_model(C)
@@ -540,5 +609,32 @@ run_episodes()
 
 
 init_data()
-@show M.G
-@show C.G
+
+function debug_competence(C, L)
+    κ, λ, D = C.𝒮.A.κ, C.𝒮.F.λ, C.𝒮.D
+    total, lo = 0,0
+    for (s, state) in enumerate(C.S)
+        println("**** $s ****")
+        state = C.S[s]
+        if terminal(C, state) || !haskey(L.π, s)
+            continue
+        end
+        total += 1
+        ds = Int(ceil(s/2))
+        a = solve(L, C, s)[1]
+        action = C.A[a]
+        da = Int(ceil(a/3))
+        if action.l != competence(state.state, action.action)
+            println("-----------------------")
+            println("State:  $state      $s |       Action: $action         $a")
+            println("Competence: $(competence(state.state, action.action))")
+            println("Kappa: $(κ[ds][da])")
+            println("Lambda: $(λ[ds][da])")
+            println("-----------------------")
+        else
+            lo += 1
+        end
+    end
+    println(lo/total)
+end
+debug_competence(C, ℒ)

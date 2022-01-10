@@ -381,11 +381,11 @@ function simulate(M::DomainSSP, L)
     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
 end
 
-function main()
-    println("start")
-    M = build_model()
-    L = solve_model(M)
-    simulate(M, L)
-end
-
-main()
+# function main()
+#     println("start")
+#     M = build_model()
+#     L = solve_model(M)
+#     simulate(M, L)
+# end
+#
+# main()

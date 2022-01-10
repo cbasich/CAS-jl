@@ -10,6 +10,7 @@ mutable struct LAOStarSolver
     G::Vector{Float64}
     H::Vector{Float64}
     Qs::Vector{Float64}
+    solved::Vector{Bool}
 end
 
 function lookahead(ℒ::LAOStarSolver,
@@ -31,8 +32,9 @@ function backup(ℒ::LAOStarSolver,
                 M,
                 s::Integer)
     for a = 1:length(M.A)
+        # ℒ.Qs[a] = lookahead(ℒ, M, s, a)
         if !allowed(M, s, a)
-            ℒ.Qs[a] = 100.0
+            ℒ.Qs[a] = 1000.0
         else
             ℒ.Qs[a] = lookahead(ℒ, M, s, a)
         end
@@ -56,6 +58,7 @@ function expand(ℒ::LAOStarSolver,
                 M,
                 s::Integer,
           visited::Set{Integer})
+    # println(s)
     if s ∈ visited
         return 0
     end
@@ -84,7 +87,7 @@ function test_convergence(ℒ::LAOStarSolver,
     if terminal(M, M.S[s])
         return 0.0
     end
-
+    # println(visited)
     if s ∈ visited
         return 0.0
     end
@@ -109,6 +112,10 @@ end
 function solve(ℒ::LAOStarSolver,
                M,
                s::Integer)
+
+    if ℒ.solved[s]
+        return ℒ.π[s]
+    end
     expanded = 0
     iter = 0
     total_expanded = 0
@@ -120,7 +127,7 @@ function solve(ℒ::LAOStarSolver,
             empty!(visited)
             num_expanded = expand(ℒ, M, s, visited)
             total_expanded += num_expanded
-            println(num_expanded, "               ", total_expanded)
+            # println(num_expanded, "               ", total_expanded)
             if num_expanded == 0
                 break
             end
@@ -128,7 +135,7 @@ function solve(ℒ::LAOStarSolver,
         while true
             empty!(visited)
             error = test_convergence(ℒ, M, s, visited)
-            println(error)
+            # println(error)
             if error > ℒ.dead_end_cost
                 break
             end
@@ -136,11 +143,14 @@ function solve(ℒ::LAOStarSolver,
                 if !haskey(ℒ.π, s)
                     println(M.S[s])
                 end
+                # println("$s:  Total nodes expanded: $total_expanded")
+                ℒ.solved[s] = true
                 return ℒ.π[s], total_expanded
             end
         end
         iter += 1
     end
-    # println("Total nodes expanded: $total_expanded")
+    println("Total nodes expanded: $total_expanded")
+    ℒ.solved[s] = true
     return ℒ.π[s], total_expanded
 end

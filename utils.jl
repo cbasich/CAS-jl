@@ -1,28 +1,23 @@
-using CSV
-using DataFrames
+# using CSV
+# using DataFrames
 using Flux
-using GLM
+# using GLM
 
 function record_data(data, filepath, append=true)
     CSV.write(filepath, DataFrame(data, :auto), append=append, header=false)
 end
 
 function init_pass_obstacle_data(filepath)
-    data = [:x1 :x2 :x3 :x4 :x5 :x6 :y]
+    data = [:x1 :x2 :x3 :x4 :y]
     for pos in 0:4
         for o in -1:3
             if pos < 1 && o != -1
                 continue
             end
             for t in 0:1
-                for d in 0:1
-                    for p in 0:1
-                        for l in 1:2
-                            for y in 0:1
-                                tmp = [pos o t d p l y]
-                                data = vcat(data, [pos o t d p l y])
-                            end
-                        end
+                for p in 0:1
+                    for y in 0:1
+                        data = vcat(data, [pos o t p y])
                     end
                 end
             end

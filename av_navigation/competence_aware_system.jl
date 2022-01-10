@@ -1,5 +1,6 @@
 import Combinatorics
 
+using Plots
 using GLM
 using DataFrames
 using CSV
@@ -33,7 +34,7 @@ function generate_autonomy_profile(𝒟::DomainSSP)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
             if typeof(state) == NodeState
-                if action.value == '⤉'
+                if action.value == '⤉' || action.value == '↓'
                     κ[s][a] = 3
                 elseif state.p == true || state.o == true || state.v > 1
                     κ[s][a] = 1
@@ -56,16 +57,17 @@ function update_potential(C, ℒ, s, a, L)
     state = CASstate(C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
     X = [lookahead(ℒ, C, s2, ((a - 1) * 4 + l + 1) ) for l ∈ L]
-    P = softmax(-1.0 .* X)
+    P = .75 .* softmax(-1.0 .* X)
     for l=1:size(L)[1]
-        C.potential[s][a][L[l]+1] += .75 .* P[l]
+        C.potential[s][a][L[l]+1] += P[l]
     end
     clamp!(C.potential[s][a], 0.0, 1.0)
 end
 
 function update_autonomy_profile!(C, ℒ)
-    κ =  C.𝒮.A.κ
+    κ = C.𝒮.A.κ
     for (s, state) in enumerate(C.𝒮.D.S)
+        # solve(ℒ, C, s)
         for (a, action) in enumerate(C.𝒮.D.A)
             if κ[s][a] == 3 || κ[s][a] == 0
                 continue
@@ -77,26 +79,34 @@ function update_autonomy_profile!(C, ℒ)
             L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
             update_potential(C, ℒ, s, a, L)
 
-            r = randn()
+            # r = rand()
+            # t = 0.0
             for i in sortperm(-[C.potential[s][a][l+1] for l in L])
-                if r <= C.potential[s][a][i]
+                # t +=
+                if rand() <= C.potential[s][a][L[i]+1]
                     if L[i] == 3
                         if C.𝒮.F.λ[s][a][2]['∅'] < 0.85
+                            C.potential[s][a][L[i] + 1] = 0.0
                             break
                         end
                     elseif L[i] == 0
                         if C.𝒮.F.λ[s][a][1]['⊕'] > 0.35
+                            C.potential[s][a][L[i] + 1] = 0.0
                             break
                         end
+                    elseif L[i] == κ[s][a]
+                        C.potential[s][a][L[i] + 1] = 0.0
+                        break
                     end
                     if L[i] == competence(state, action)
-                        println("Updated to competence: $(κ[s][a]) | $(L[i])")
+                        println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
                     end
-                    κ[s][a] = L[i]
+                    C.𝒮.A.κ[s][a] = L[i]
                     C.potential[s][a][L[i] + 1] = 0.0
                     if L[2] == 1 && L[i] == 2
                         C.flags[s][a] = true
                     end
+                    break
                 end
             end
         end
@@ -112,7 +122,7 @@ function competence(state::DomainState,
             return 3
         end
     else
-        if action.value == '⤉'
+        if action.value == '⤉' || action.value == '↓'
             return 3
         elseif action == '→'
             if state.o && state.p && state.v > 1
@@ -193,31 +203,12 @@ function generate_feedback_profile(𝒟::DomainSSP,
                 fm = @formula(y ~ x1 + x2 + x3)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x2 => DummyCoding()))
             end
-            # logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
-
-            # insufficient_data = false
-            # try
-            #     logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
-            # catch
-            #     insufficient_data = true
-            # end
-
             λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             for l in [1,2]
                 λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
-                    # if insufficient_data
-                    #     λ[s][a][l][σ] = 0.5
-                    #     continue
-                    # end
-
                     q = DataFrame(hcat(f, l), :auto)
                     p = clamp(predict(logit, q)[1], 0.0, 1.0)
-                    # try
-                    #     p = predict(logit, q)[1]
-                    # catch
-                    #     p = 0.5
-                    # end
                     if σ == '⊕' || σ == '∅'
                         λ[s][a][l][σ] = p
                     else
@@ -248,31 +239,15 @@ function update_feedback_profile!(C)
                 fm = @formula(y ~ x1 + x2 + x3)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x2 => DummyCoding()))
             end
-            # logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
-
-            # insufficient_data = false
-            # try
-            #     logit = glm(fm, hcat(X, Y), Binomial(), ProbitLink())
-            # catch
-            #     insufficient_data = true
-            # end
 
             λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             for l in [1,2]
                 λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
-                    # if insufficient_data
-                    #     λ[s][a][l][σ] = 0.5
-                    #     continue
-                    # end
 
                     q = DataFrame(hcat(f, l), :auto)
                     p = clamp(predict(logit, q)[1], 0.0, 1.0)
-                    # try
-                    #     p = predict(logit, q)[1]
-                    # catch
-                    #     p = 0.5
-                    # end
+
                     if σ == '⊕' || σ == '∅'
                         λ[s][a][l][σ] = p
                     else
@@ -293,7 +268,7 @@ function load_feedback_profile()
 end
 
 function human_cost(action::CASaction)
-    return [10. 2. 1. 0.][action.l + 1]              #TODO: Fix this.
+    return [8.0 3. 1. 0.][action.l + 1]              #TODO: Fix this.
 end
 ##
 
@@ -303,7 +278,7 @@ struct CAS
     F::FeedbackModel
 end
 
-struct CASSP
+mutable struct CASSP
     𝒮::CAS
     S::Vector{CASstate}
     A::Vector{CASaction}
@@ -357,6 +332,16 @@ function generate_states(D, F)
     return states, CASstate(D.s₀, '∅'), G
 end
 
+function reset_problem!(D, C)
+    C.s₀ = CASstate(D.s₀, '∅')
+    C.G = Set{CASstate}()
+    for state in D.G
+        for σ in C.𝒮.F.Σ
+            push!(C.G, CASstate(state, σ))
+        end
+    end
+end
+
 function terminal(C::CASSP, state::CASstate)
     return state in C.G
 end
@@ -374,7 +359,7 @@ end
 
 function allowed(C, s::Int,
                     a::Int)
-    return C.A[a].l in [0, C.𝒮.A.κ[ceil(s/4)][ceil(a/4)]]
+    return C.A[a].l <= C.𝒮.A.κ[ceil(s/4)][ceil(a/4)]
 end
 
 function generate_transitions!(𝒟, 𝒜, ℱ, C,
@@ -399,7 +384,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_a = 𝒟.AIndex[base_action]
 
             t = 𝒟.T[base_s][base_a]
-            if t == [(base_s, 1.0)]  # || action.l ∉ [0,κ[base_s][base_a]]
+            if t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a]
                 T[s][a] = [(s, 1.0)]
                 continue
             end
@@ -431,6 +416,33 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                 for (sp, p) in t
                     push!(T[s][a], ((sp-1) * 4 + 4, p))
                 end
+            end
+        end
+    end
+end
+
+function check_transition_validity(C)
+    S, A, T = C.S, C.A, C.T
+    for (s, state) in enumerate(S)
+        for (a, action) in enumerate(A)
+            mass = 0.0
+            for (s′, p) in T[s][a]
+                mass += p
+                if p < 0.0
+                    println("Transition error at state index $s and action index $a")
+                    println("with a negative probability of $p.")
+                    println("State: $(S[i])")
+                    println("Action: $(A[j])")
+                    @assert false
+                end
+            end
+            if round(mass; digits=4) != 1.0
+                println("Transition error at state $state and action $action.")
+                println("State index: $s      Action index: $a")
+                println("Total probability mass of $mass.")
+                println("Transition vector is the following: $(T[s][a])")
+                println("Succ state vector: $([S[s] for (s,p) in T[s][a]])")
+                @assert false
             end
         end
     end
@@ -525,6 +537,11 @@ function compute_level_optimality(C, ℒ)
     total = 0
     lo = 0
     for s in keys(ℒ.π)
+    # for (s, state) in enumerate(C.S)
+    #     if terminal(C, state)
+    #         continue
+    #     end
+        # solve(ℒ, C, s)
         total += 1
         state = C.S[s]
         action = C.A[ℒ.π[s]]
@@ -537,6 +554,9 @@ end
 function simulate(M::CASSP, L)
     S, A, C = M.S, M.A, M.C
     c = Vector{Float64}()
+    signal_count = 0
+    actions_taken = 0
+    actions_at_competence = 0
     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
     for i ∈ 1:1
         state = M.s₀
@@ -544,9 +564,11 @@ function simulate(M::CASSP, L)
         while true
             s = M.SIndex[state]
             # println(state, "     ", s)
-            a = solve(L, C, s)
+            a = solve(L, M, s)[1]
             action = A[a]
-            println("Taking action $action in state $state.")
+            actions_taken += 1
+            actions_at_competence += (action.l == competence(state.state, action.action))
+            # println("Taking action $action in state $state.")
             if action.l == 0 || action.l == 3
                 σ = '∅'
             elseif action.l == 1
@@ -568,7 +590,10 @@ function simulate(M::CASSP, L)
                     record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
                 end
             end
-            println("received feedback: $σ")
+            # println("received feedback: $σ")
+            if σ != '∅'
+                signal_count += 1
+            end
             episode_cost += C(M, s, a)
             if σ == '⊖'
                 block_transition!(M, state, action)
@@ -591,13 +616,13 @@ function simulate(M::CASSP, L)
         push!(c, episode_cost)
     end
     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
-    return mean(c)
+    return mean(c), signal_count, (actions_at_competence / actions_taken)
 end
 
 function build_cas(𝒟::DomainSSP,
                    L::Vector{Int},
                    Σ::Vector{Char})
-    if ispath(joinpath(abspath(@__DIR__), "params"))
+    if ispath(joinpath(abspath(@__DIR__), "params.jld"))
         κ = load_autonomy_profile()
     else
         κ = generate_autonomy_profile(𝒟)
@@ -614,14 +639,15 @@ function build_cas(𝒟::DomainSSP,
 
     C = CASSP(𝒮, S, A, T, generate_costs, s₀, G)
     generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
-
+    check_transition_validity(C)
     return C
 end
 
 function solve_model(C::CASSP)
     ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
                         zeros(length(C.S)), zeros(length(C.S)),
-                        zeros(length(C.S)), zeros(length(C.A)))
+                        zeros(length(C.S)), zeros(length(C.A)),
+                        zeros(Bool, length(C.S)))
     a, total_expanded = solve(ℒ, C, C.SIndex[C.s₀])
     # println("LAO* expanded $total_expanded nodes.")
     # println("Expected cost to goal: $(ℒ.V[C.SIndex[C.s₀]])")
@@ -629,7 +655,7 @@ function solve_model(C::CASSP)
 end
 
 function init_data()
-    for action in ["←", "↑", "→", "⤉"]
+    for action in ["←", "↑", "→", "↓", "⤉"]
         init_node_data(joinpath(abspath(@__DIR__), "data", "node_$action.csv"))
     end
 
@@ -637,45 +663,87 @@ function init_data()
     init_edge_data(joinpath(abspath(@__DIR__), "data", "edge_⤉.csv"))
 end
 
-init_data()
+
+function random_route(M, C)
+    init = rand([12, 1, 4, 16])
+    goal = rand(5:8)
+    while goal == init
+        goal = rand(1:16)
+    end
+    set_init!(M, init)
+    set_goal!(M, goal)
+    generate_transitions!(M, M.graph)
+    reset_problem!(M, C)
+end
 
 function run_episodes()
-    M = build_model()
-    C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+    # println("Starting")
 
+    # println("Built")
     los = Vector{Float64}()
     costs = Vector{Float64}()
+    signal_counts = Vector{Int}()
+    lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
+    total_signals_received = 0
+    M = build_model()
+    C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
     for i=1:500
-        # println(i)
         ℒ = solve_model(C)
         lo = compute_level_optimality(C, ℒ)
-        println(i, "  |  ", lo)
+        println(i, "  |  ", M.s₀.id, "→", first(M.G).id, "  |  ", lo)
         push!(los, lo)
-        push!(costs, simulate(C, ℒ))
+        c, signal_count, percent_lo = simulate(C, ℒ)
+        push!(costs, c)
+        # push!(c, simulate(C, ℒ))
+        total_signals_received += signal_count
+        push!(signal_counts, total_signals_received)
+        push!(lo_function_of_signal_count, (total_signals_received, percent_lo))
         update_feedback_profile!(C)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
         update_autonomy_profile!(C, ℒ)
         save_autonomy_profile(C.𝒮.A.κ)
+        random_route(M, C)
+        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
     end
 
     println(costs)
     println(los)
+    println(lo_function_of_signal_count)
+    println(signal_counts)
+
+    x = [i[1] for i in lo_function_of_signal_count]
+    y = [i[2] for i in lo_function_of_signal_count]
+
+    g = scatter(x, los, xlabel="Signals Received", ylabel="Level Optimality")
+    savefig(g, "level_optimality_by_signal_count.png")
+
+    g2 = scatter(x, y, xlabel="Signals Received", ylabel="Level Optimality")
+    savefig(g2, "lo_encountered.png")
 end
 
 run_episodes()
 
-
+init_data()
 
 M = build_model()
 C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
-ℒ = solve_model(C)
-update_autonomy_profile!(C,ℒ)
+L = solve_model(C)
+compute_level_optimality(C, L)
+update_autonomy_profile!(C,L)
+@show C.𝒮.A.κ[1356][5]
+@show C.𝒮.F.λ[1356][5]
 generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+solve(L, C, 3201)
+
+
 function debug_competence(C, L)
     κ, λ, D = C.𝒮.A.κ, C.𝒮.F.λ, C.𝒮.D
     for (s, state) in enumerate(C.S)
-        println("**** $s ****")
+        # println("**** $s ****")
         state = C.S[s]
+        if terminal(C, state)
+            continue
+        end
         ds = Int(ceil(s/4))
         a = solve(L, C, s)[1]
         action = C.A[a]
@@ -690,52 +758,4 @@ function debug_competence(C, L)
         end
     end
 end
-
-
-debug_competence(C, ℒ)
-@show C.𝒮.F.λ[Int(ceil(5397/4))][1]
-@show M.S[10]
-@show C.T[5397][1]
-@show lookahead(ℒ,M, 3496, 1)
-@show C.S[333]
-# state = CASstate(EdgeState(4, 7, '↓', true, 2), '∅')
-# s = C.SIndex[state]
-# sb = C.𝒮.D.SIndex[state.state]
-# action = CASaction(DomainAction('⤉'), 0)
-# a = C.AIndex[action]
-# ab = C.𝒮.D.AIndex[action.action]
-#
-# @show M.T[sb][ab]
-# @show C.T[s][a]
-# @show C.S[5250]
-#
-# record_data([0 1 3 1 0], joinpath(abspath(@__DIR__), "data", "node_↑.csv"))
-
-
-X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_↑.csv"))
-@show X
-fm = @formula(y ~ x1 + x2 + x3 + x4)
-logit = glm(fm, hcat(X, Y), Binomial(), LogitLink())
-logit = glm(fm, hcat(X, Y), NegativeBinomial(2.0), LogLink())
-
-for i=1:10
-    X = vcat(X, DataFrame([1 0 0 1], :auto))
-    append!(Y.y, [0])
-end
-Y = vcat(Y, DataFrame(rand(1:1, 10), :auto))
-
-@show predict(logit, DataFrame([1 1 4 2], :auto))[1]
-
-X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_←.csv"))
-fm = @formula(y ~ x1 + x2 + x3 + x4)
-logit = lm(fm, hcat(X, Y), contrasts= Dict(:x3 => DummyCoding()))
-
-predict
-
-state = CASstate(NodeState(12, true, true, 0, '←'), '⊘')
-dstate = NodeState(12, true, true, 0, '←')
-s = C.SIndex[state]
-ds = M.SIndex[dstate]
-k = generate_autonomy_profile(M)
-@show C.𝒮.A.κ[ds]
-@show k[ds]
+debug_competence(C, L)

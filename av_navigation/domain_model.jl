@@ -27,6 +27,16 @@ function change_direction(θ1, θ2)
         else
             return '↑'
         end
+    elseif θ2 == '↓'
+        if θ1 == '↑'
+            return '↓'
+        elseif θ1 == '→'
+            return '←'
+        elseif θ1 == '↓'
+            return '↑'
+        else
+            return '→'
+        end
     end
 end
 
@@ -103,7 +113,7 @@ function Base.hash(a::DomainAction, h::UInt)
     return hash(a.value, h)
 end
 
-struct DomainSSP
+mutable struct DomainSSP
     S
     A
     T
@@ -112,15 +122,17 @@ struct DomainSSP
     G
     SIndex::Dict{DomainState, Int}
     AIndex::Dict{DomainAction, Int}
+    graph
 end
 function DomainSSP(S::Vector{DomainState},
                    A::Vector{DomainAction},
                    T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
                    C::Function,
                   s₀::DomainState,
-                   G::Set{DomainState})
+                   G::Set{DomainState},
+               graph::Graph)
     SIndex, AIndex = generate_index_dicts(S, A)
-    return DomainSSP(S, A, T, C, s₀, G, SIndex, AIndex)
+    return DomainSSP(S, A, T, C, s₀, G, SIndex, AIndex, graph)
 end
 
 function generate_index_dicts(S::Vector{DomainState}, A::Vector{DomainAction})
@@ -174,13 +186,31 @@ function generate_states(G::Graph,
     return S, s₀, G
 end
 
+function set_init!(M, init)
+    M.s₀ = NodeState(init, false, false, 0, '↑')
+end
+
+function set_goal!(M, goal)
+    M.G = Set{DomainState}()
+    for p in [false, true]
+        for o in [false, true]
+            for v in [0,1,2,3,4]
+                for θ in DIRECTIONS
+                    state = NodeState(goal, p, o, v, θ)
+                    push!(M.G, state)
+                end
+            end
+        end
+    end
+end
+
 function terminal(M, state::DomainState)
     return state in M.G
 end
 
 function generate_actions()
     A = Vector{DomainAction}()
-    for value in ['←', '↑', '→', '⤉']
+    for value in ['←', '↑', '→', '↓', '⤉']
         push!(A, DomainAction(value))
     end
     return A
@@ -205,6 +235,10 @@ function generate_transitions!(M, G)
                     T[s][a] = right_turn_distribution(M, state, s, G)
                 elseif action.value == '↑'
                     T[s][a] = go_straight_distribution(M, state, s, G)
+                elseif action.value == '↓'
+                    state′ = NodeState(state.id, state.p, state.o, state.v,
+                                       change_direction(state.θ, '↓'))
+                    T[s][a] = [(M.SIndex[state′], 1.0)]
                 else
                     T[s][a] = wait_distribution(M, state, s, G)
                 end
@@ -314,7 +348,12 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
     N, E = G.nodes, G.edges
 
     edge = E[state.u][state.v]
-    p_arrived = (1 / edge["length"]) * (0.5 + 0.5*edge["num lanes"])
+    p_arrived = (1 / edge["length"])
+    if edge["num lanes"] == 2
+        p_arrived *= 2
+    elseif edge["num lanes"] == 3
+        p_arrived *= 4
+    end
     p_driving = 1 - p_arrived
     p_obstruction = edge["obstruction probability"]
 
@@ -442,14 +481,17 @@ end
 function build_model()
     # G = generate_map(filepath)
     # G = generate_dummy_graph()
-    G = generate_ma_graph()
-    init = 1
-    goal = 7
-    S, s₀, goals = generate_states(G, init, goal)
+    graph = generate_ma_graph()
+    init = 1 # rand(1:16)
+    goal = 5 # rand(1:16)
+    # while goal == init
+    #     goal = rand(1:16)
+    # end
+    S, s₀, G = generate_states(graph, init, goal)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
-    M = DomainSSP(S, A, T, generate_costs, s₀, goals)
-    generate_transitions!(M, G)
+    M = DomainSSP(S, A, T, generate_costs, s₀, G, graph)
+    generate_transitions!(M, graph)
     check_transition_validity(M)
     return M
 end
@@ -463,9 +505,12 @@ function solve_model(M::DomainSSP)
     println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
     return ℒ
 end
-
+function allowed(D::DomainSSP, s::Int, a::Int)
+    return true
+end
+#
 # M = build_model()
 # L = solve_model(M)
 # simulate(M, L)
-
+#
 # main_dm()
