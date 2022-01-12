@@ -113,9 +113,9 @@ function solve(ℒ::LAOStarSolver,
                M,
                s::Integer)
 
-    if ℒ.solved[s]
-        return ℒ.π[s]
-    end
+    # if ℒ.solved[s]
+    #     return ℒ.π[s]
+    # end
     expanded = 0
     iter = 0
     total_expanded = 0

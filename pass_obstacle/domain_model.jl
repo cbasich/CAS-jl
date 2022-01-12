@@ -235,23 +235,17 @@ function generate_transitions!(M::DomainSSP)
                 elseif state.oncoming == 1 && state′.oncoming == 2
                     p *= 0.9
                 elseif state.oncoming == 2 && state.priority
-                    if state′.oncoming != 2
+                    if state′.oncoming != 2 || !state′.priority
                         continue
-                    else
-                        if state′.priority
-                            p *= 0.8
-                        else
-                            p *= 0.2
-                        end
                     end
                 elseif state.oncoming == 2 && !state.priority
                     if state′.oncoming == 3
-                        p *= 0.8
+                        p *= 0.5
                         if state′.priority
                             continue
                         end
                     elseif state′.oncoming == 2
-                        p *= 0.2
+                        p *= 0.5
                         if !state′.priority
                             continue
                         end
@@ -262,11 +256,11 @@ function generate_transitions!(M::DomainSSP)
                     if state′.oncoming == 0
                         p *= 0.1
                     elseif state′.oncoming == 1
-                        p *= 0.3
+                        p *= 0.1
                     elseif state′.oncoming == 2
-                        p *= 0.4
+                        p *= 0.7
                     elseif state′.oncoming == 3
-                        p *= 0.2
+                        p *= 0.1
                     end
                 else
                     continue
