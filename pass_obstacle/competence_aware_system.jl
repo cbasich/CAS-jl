@@ -102,16 +102,17 @@ function competence(state::DomainState,
     if state.position == 4
         return 2
     end
+    if state.position == -1
+        return -1
+    end
     if action.value == :stop
-        if state.position != 1
-            return 0
-        elseif state.oncoming < 2 && state.trailing
+        if state.position > 1 || (state.oncoming < 1 && state.trailing)
             return 0
         else
             return 2
         end
     elseif action.value == :edge
-        if state.position > 0
+        if state.position > 0 && state.trailing
             return 0
         else
             return 2
@@ -119,14 +120,53 @@ function competence(state::DomainState,
     else
         if state.oncoming == -1
             return 0
-        elseif state.oncoming > 1 && !state.priority
-            return 0
-        elseif state.oncoming > 1 && state.priority
+        elseif state.oncoming > 0
             return 1
         else
             return 2
         end
     end
+    # if action.value == :stop
+    #     if state.position > 1
+    #         return 0
+    #     elseif state.oncoming == 0 && state.trailing
+    #         return 0
+    #     else
+    #         return 2
+    #     end
+    #     # if state.position > 1
+    #     #     if state.oncoming > 0 || state.trailing
+    #     #         return 0
+    #     #     else
+    #     #         return 2
+    #     #     end
+    #     # elseif state.oncoming < 2 && state.trailing
+    #     #     return 0
+    #     # else
+    #     #     return 2
+    #     # end
+    # elseif action.value == :edge
+    #     if state.oncoming
+    #     if state.position > 0
+    #         if state.trailing || !state.priority
+    #             return 0
+    #         else
+    #             return 2
+    #         end
+    #     else
+    #         return 2
+    #     end
+    # else
+    #     if state.oncoming == -1
+    #         return 0
+    #     elseif state.oncoming > 1 && !state.priority
+    #         return 0
+    #     elseif state.oncoming > 1 && state.priority
+    #         return 1
+    #     else
+    #         return 2
+    #     end
+    # end
 end
 
 function save_autonomy_profile(κ)
@@ -247,8 +287,7 @@ function load_feedback_profile()
     return load(joinpath(abspath(@__DIR__), "params.jld", "λ"))
 end
 
-function human_cost(state::CASstate,
-                   action::CASaction)
+function human_cost(action::CASaction)
     return [10.0 1.0 0.0][action.l+1]
 end
 ##
@@ -441,35 +480,27 @@ end
 
 function generate_feedback(state::DomainState,
                           action::DomainAction)
-    # if randn() <= 0.05
-    #     if action.l == 1
-    #         return ['⊕', '⊖'][rand(1:2)]
-    #     elseif action.l == 2
-    #         return ['∅', '⊘'][rand(1:2)]
-    #     end
-    # end
+    if randn() <= 0.05
+        return ['∅', '⊘'][rand(1:2)]
+    end
     if state.position == 4
         return '∅'
     end
 
     if action.value == :stop
-        if state.position != 1
-            return '⊘'
-        elseif state.oncoming < 2 && state.trailing
+        if state.position > 1 || (state.oncoming < 1 && state.trailing)
             return '⊘'
         else
             return '∅'
         end
     elseif action.value == :edge
-        if state.position > 0
+        if state.position > 0 && state.trailing
             return '⊘'
         else
             return '∅'
         end
     else
-        if state.oncoming == -1
-            return '⊘'
-        elseif state.oncoming > 1 && !state.priority
+        if state.oncoming == -1 || (state.oncoming > 1 && !state.priority)
             return '⊘'
         else
             return '∅'
@@ -502,7 +533,7 @@ function compute_level_optimality(C, ℒ)
         if terminal(C, state)
             continue
         end
-        # solve(ℒ, C, s)
+        solve(ℒ, C, s)
         total += 1
         action = C.A[ℒ.π[s]]
         lo += (action.l == competence(state.state, action.action))
@@ -529,13 +560,13 @@ function simulate(M::CASSP, L)
             actions_taken += 1
             actions_at_competence += (action.l == competence(state.state, action.action))
             # println("Taking action $action in state $state.")
-            if action.l == 0 || action.l == 2
-                σ = '∅'
-            else
+            if action.l == 1
                 σ = generate_feedback(state.state, action.action)
                 y = (σ == '∅')
                 d = hcat(get_state_features(state.state), y)
                 record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
+            else
+                σ = '∅'
             end
             # if action.l == 1
             #     σ = generate_feedback(state, action)
@@ -575,7 +606,7 @@ function simulate(M::CASSP, L)
         push!(c, episode_cost)
     end
     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
-    return mean(c), signal_count, (actions_at_competence / actions_taken)
+    return mean(c), signal_count, (actions_at_competence / actions_taken), L.V[M.SIndex[M.s₀]]
 end
 
 
@@ -624,18 +655,20 @@ function run_episodes()
     los = Vector{Float64}()
     costs = Vector{Float64}()
     signal_counts = Vector{Int}()
+    expected_costs = Vector{Float64}()
     lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
     total_signals_received = 0
 
     M = build_model()
     C = build_cas(M, [0,1,2], ['⊘', '∅'])
-    for i=1:2000
+    for i=1:3000
         ℒ = solve_model(C)
         lo = compute_level_optimality(C, ℒ)
         println(i, "  |  ", lo)
         push!(los, lo)
-        c, signal_count, percent_lo = simulate(C, ℒ)
+        c, signal_count, percent_lo, expected_cost = simulate(C, ℒ)
         push!(costs, c)
+        push!(expected_costs, expected_cost)
         total_signals_received += signal_count
         push!(signal_counts, total_signals_received)
         push!(lo_function_of_signal_count, (total_signals_received, percent_lo))
@@ -648,6 +681,7 @@ function run_episodes()
 
     println(costs)
     println(los)
+    println(expected_costs)
     println(lo_function_of_signal_count)
     println(signal_counts)
 
@@ -659,6 +693,9 @@ function run_episodes()
 
     g2 = scatter(x, y, xlabel="Signals Received", ylabel="Level Optimality")
     savefig(g2, "PO_lo_encountered.png")
+
+    g3 = scatter(x, expected_costs, xlabel="Signal Received", ylabel="Expected Cost")
+    savefig(g3, "expected_Cost.png")
 end
 # M = build_model()
 # C = build_cas(M, [0,1,2], ['⊘', '∅'])
@@ -667,13 +704,13 @@ end
 # ℒ = solve_model(C)
 run_episodes()
 
-
 init_data()
 
 function debug_competence(C, L)
     κ, λ, D = C.𝒮.A.κ, C.𝒮.F.λ, C.𝒮.D
     total, lo = 0,0
-    for (s, state) in enumerate(C.S)
+    # for (s, state) in enumerate(C.S)
+    for s in keys(L.π)
         println("**** $s ****")
         state = C.S[s]
         if terminal(C, state)
@@ -699,18 +736,10 @@ function debug_competence(C, L)
 end
 debug_competence(C, ℒ)
 
-s = 241
+s = 96
 ds = Int(ceil(s/2))
-a = 8
-da = 2
-
-@show C.potential[ds][da]
-
-
-State:  CASstate(DomainState(3, 0, true, true, false), '∅')      206 |       Action: CASaction(DomainAction(:go), 1)         8
-Competence: 2
-Kappa: 1
-Lambda: Dict(1 => Dict('⊘' => 0.0937740994336681,'∅' => 0.9062259005663319))
+a = 2
+da = 1
 
 X, Y = read_data(joinpath(abspath(@__DIR__), "data", "stop.csv"))
 fm = @formula(y ~ x1 + x2 + x3 + x4)
@@ -718,10 +747,31 @@ logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCod
 @show predict(logit, DataFrame(transpose(get_state_features(C.S[331].state)), :auto))
 @show transpose(get_state_features(C.S[331].state))
 
-x = [4 3 1 1]
+x = [1 1 0 0]
 @show d = onehot(x)
 @show predict(logit, DataFrame(d, :auto))
 @show predict(logit, DataFrame(x, :auto))
 
 glogit = glm(fm, hcat(X, Y), Binomial(), LogitLink())
 @show predict(glogit, DataFrame(x, :auto))
+
+function reachable(C, L)
+    s, S = C.SIndex[C.s₀], C.S
+    reachable = Set{Int}()
+    to_visit = Vector{Int}()
+    push!(to_visit, s)
+    while !isempty(to_visit)
+        a = L.π[s]
+        for (sp, p) in C.T[s][a]
+            if sp ∉ reachable && p > 0.0
+                push!(to_visit, sp)
+                push!(reachable, sp)
+            end
+        end
+        s = pop!(to_visit)
+    end
+    return reachable
+end
+
+R = reachable(C, ℒ)
+@show ℒ.π
