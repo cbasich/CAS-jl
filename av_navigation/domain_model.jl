@@ -482,11 +482,11 @@ function build_model()
     # G = generate_map(filepath)
     # G = generate_dummy_graph()
     graph = generate_ma_graph()
-    init = 1 # rand(1:16)
-    goal = 5 # rand(1:16)
-    # while goal == init
-    #     goal = rand(1:16)
-    # end
+    init = rand(1:16)
+    goal = rand(1:16)
+    while goal == init
+        goal = rand(1:16)
+    end
     S, s₀, G = generate_states(graph, init, goal)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()

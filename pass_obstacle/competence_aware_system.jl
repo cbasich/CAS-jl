@@ -247,8 +247,7 @@ function load_feedback_profile()
     return load(joinpath(abspath(@__DIR__), "params.jld", "λ"))
 end
 
-function human_cost(state::CASstate,
-                   action::CASaction)
+function human_cost(action::CASaction)
     return [10.0 1.0 0.0][action.l+1]
 end
 ##
@@ -496,13 +495,13 @@ end
 function compute_level_optimality(C, ℒ)
     total = 0
     lo = 0
-    for s in keys(ℒ.π)
-        state = C.S[s]
-    # for (s, state) in enumerate(C.S)
+    # for s in keys(ℒ.π)
+    #     state = C.S[s]
+    for (s, state) in enumerate(C.S)
         if terminal(C, state)
             continue
         end
-        # solve(ℒ, C, s)
+        solve(ℒ, C, s)
         total += 1
         action = C.A[ℒ.π[s]]
         lo += (action.l == competence(state.state, action.action))
