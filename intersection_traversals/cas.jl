@@ -36,7 +36,7 @@ function update_potential(ℳ, ℒ, s, a, L)
     clamp!(ℳ.potential[s][a], 0.0, 1.0)
 end
 
-function update_autonomy_profile!(model, solver)
+function update_autonomy_profile!(ℳ, ℒ)
     κ, S, A = ℳ.𝒮.A.κ, ℳ.𝒮.D.S, ℳ.𝒮.D.A
     for (s, state) in enumerate(S)
         for (a, action) in enumerate(A)
@@ -45,10 +45,31 @@ function update_autonomy_profile!(model, solver)
             end
 
             L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
+            update_potential(ℳ, ℒ, s, a, L)
+
+            for i in sortperm(-[ℳ.potential[s][a][l+1] for l in L])
+                if rand() <= ℳ.potential[s][a][L[i] + 1]
+                    logic()
+
+                    ℳ.𝒮.A.κ[s][a] = L[i]
+                    ℳ.potential[s][a][L[i]+1] = 0.0
+                    break
+                end
+            end
+        end
+    end
 end
 
 function competence(state::State,
                    action::Action)
+end
+
+function save_autonomy_profile(κ)
+    save(joinpath(abspath(@__DIR__), "params.jld"), "κ", κ)
+end
+
+function load_autonomy_profile()
+    return load(joinpath(abspath(@__DIR__), "params.jld"), "κ")
 end
 
 function autonomy_cost(state::CASstate)
@@ -290,17 +311,16 @@ function generate_actions(𝒮::CAS)
     return actions
 end
 
-function allowed(C, s::Int,
+function allowed(ℳ, s::Int,
                     a::Int)
-    return C.A[a].l <= C.𝒮.A.κ[ceil(s/4)][ceil(a/4)]
+    return ℳ.A[a].l <= C.𝒮.A.κ[ceil(s/4)][ceil(a/4)]
 end
 
-function generate_transitions!(𝒟, 𝒜, ℱ, C,
+function generate_transitions!(𝒟, 𝒜, ℱ, ℳ,
                               S::Vector{CASstate},
                               A::Vector{CASaction},
                               G::Set{CASstate})
-
-    T = C.T
+    T = ℳ.T
     κ, λ = 𝒜.κ, ℱ.λ
     for (s, state) in enumerate(S)
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
@@ -333,7 +353,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                 end
             elseif action.l == 1
                 p_approve = λ[base_s][base_a][1]['⊕']
-                p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
+                p_disapprove = λ[base_s][base_a][1]['⊖']
                 push!(T[s][a], ((base_s-1) * 4 + 2, p_disapprove))
                 for (sp, p) in t
                     push!(T[s][a], ((sp-1) * 4 + 1, p * p_approve))
@@ -354,8 +374,8 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
     end
 end
 
-function check_transition_validity(C)
-    S, A, T = C.S, C.A, C.T
+function check_transition_validity(ℳ)
+    S, A, T = ℳ.S, ℳ.A, ℳ.T
     for (s, state) in enumerate(S)
         for (a, action) in enumerate(A)
             mass = 0.0
@@ -381,23 +401,25 @@ function check_transition_validity(C)
     end
 end
 
-function block_transition!(C::CASSP,
+function block_transition!(ℳ::CASSP,
                        state::CASstate,
                       action::CASaction)
-    T = C.T
+    T, L = ℳC.T, ℳ.A.L
     state′ = CASstate(state.state, '⊕')
-    s, a = C.SIndex[state], C.AIndex[action]
-    T[s][a] = [(s, 1.0)]
-    T[s+1][a] = [(s+1, 1.0)]
-    T[s+2][a] = [(s+2, 1.0)]
-    T[s+3][a] = [(s+3, 1.0)]
+    s, a = ℳ.SIndex[state], ℳ.AIndex[action]
+    for i=1:length(L)
+        T[s+i-1][a] = [(s+i-1, 1.0)]
+    end
+    # T[s+1][a] = [(s+1, 1.0)]
+    # T[s+2][a] = [(s+2, 1.0)]
+    # T[s+3][a] = [(s+3, 1.0)]
 end
 
-function generate_costs(C::CASSP,
+function generate_costs(ℳ::CASSP,
                         s::Int,
                         a::Int,)
-    D, A, F = C.𝒮.D, C.𝒮.A, C.𝒮.F
-    state, action = C.S[s], C.A[a]
+    D, A, F = ℳ.𝒮.D, ℳ.𝒮.A, ℳ.𝒮.F
+    state, action = ℳ.S[s], ℳ.A[a]
     cost = D.C(D, D.SIndex[state.state], D.AIndex[action.action])
     cost += A.μ(state)
     cost += F.ρ(action)
@@ -447,17 +469,17 @@ function generate_successor(M::DomainSSP,
     end
 end
 
-function compute_level_optimality(C, ℒ)
+function compute_level_optimality(ℳ::CASSP, ℒ)
     total = 0
     lo = 0
     for (s, state) in enumerate(C.S)
-        if terminal(C, state)
+        if terminal(ℳ, state)
             continue
         end
-        solve(ℒ, C, s)
+        solve(ℒ, ℳ, s)
         total += 1
-        state = C.S[s]
-        action = C.A[ℒ.π[s]]
+        state = ℳ.S[s]
+        action = ℳ.A[ℒ.π[s]]
         lo += (action.l == competence(state.state, action.action))
     end
     return lo/total
