@@ -181,10 +181,8 @@ function stop_distribution(M::DomainSSP, state::State, s::Int)
                 continue
             end
             if !state.row
-                if state′.row
-                    if state′.tra != :empty
-                        p *= 0.5
-                    end
+                if state′.row && state′.tra != :empty
+                    p *= 0.5
                 else
                     p *= 0.5
                 end
@@ -294,10 +292,8 @@ function edge_distribution(M::DomainSSP, state::State, s::Int)
             continue
         end
         if !state.row
-            if state′.row
-                if state′.tra != :empty
-                    p *= 0.5
-                end
+            if state′.row && state′.tra != :empty
+                p *= 0.5
             else
                 p *= 0.5
             end
@@ -400,10 +396,8 @@ function go_distribution(M::DomainSSP, state::State, s::Int)
                 continue
             end
             if !state.row
-                if state′.row
-                    if state′.tra != :empty
-                        p *= 0.5
-                    end
+                if state′.row && state′.tra != :empty
+                    p *= 0.5
                 else
                     p *= 0.5
                 end

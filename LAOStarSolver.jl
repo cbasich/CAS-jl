@@ -58,7 +58,7 @@ function expand(ℒ::LAOStarSolver,
                 M,
                 s::Integer,
           visited::Set{Integer})
-    println(M.S[s])
+    # println(M.S[s])
     if s ∈ visited
         return 0
     end
@@ -72,7 +72,7 @@ function expand(ℒ::LAOStarSolver,
         return 1
     else
         a = ℒ.π[s]
-        println(M.A[a])
+        # println(M.A[a])
         for (s′, p) in M.T[s][a]
             count += expand(ℒ, M, s′, visited)
         end
@@ -128,7 +128,7 @@ function solve(ℒ::LAOStarSolver,
             empty!(visited)
             num_expanded = expand(ℒ, M, s, visited)
             total_expanded += num_expanded
-            println(num_expanded, "               ", total_expanded)
+            # println(num_expanded, "               ", total_expanded)
             if num_expanded == 0
                 break
             end
@@ -136,7 +136,7 @@ function solve(ℒ::LAOStarSolver,
         while true
             empty!(visited)
             error = test_convergence(ℒ, M, s, visited)
-            println("State $(M.S[s])    |    $error")
+            # println("State $(M.S[s])    |    $error")
             if error > ℒ.dead_end_cost
                 break
             end
@@ -144,7 +144,7 @@ function solve(ℒ::LAOStarSolver,
                 if !haskey(ℒ.π, s)
                     println(M.S[s])
                 end
-                println("$s:  Total nodes expanded: $total_expanded")
+                # println("$s:  Total nodes expanded: $total_expanded")
                 ℒ.solved[s] = true
                 return ℒ.π[s], total_expanded
             end
