@@ -90,7 +90,8 @@ function generate_ma_graph()
                            "vehicle probabilities" => [.1, .1, .1, .7],
                            "occlusion probability" => 0.4))
 
-    edges = Dict(1 => Dict( 2 => Dict("length" => 21,
+    edges = Dict{Int, Dict{Int, Dict{String, Any}}}(
+                 1 => Dict( 2 => Dict("length" => 21,
                                       "direction" => '→',
                                       "num lanes" => 2,
                                       "obstruction probability" => 0.1),
@@ -169,7 +170,7 @@ function generate_ma_graph()
                             8 => Dict("length" => 13,
                                       "direction" => '→',
                                       "num lanes" => 1,
-                                      "obstruction probability" => 0.35),
+                                      "obstruction probability" => 0.35)),
                     8=>Dict(7 => Dict("length" => 13,
                                       "direction" => '←',
                                       "num lanes" => 1,

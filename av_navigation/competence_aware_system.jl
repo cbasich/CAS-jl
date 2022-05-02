@@ -711,7 +711,7 @@ function run_episodes(CAS_vec)
     expected_task_costs = Vector{Float64}()
     signal_counts = Vector{Int}()
     lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
-    route_records = Dict{Int, Dict{Tuple{Int, Int}, Vector{Int}}}()
+    route_records = Dict{Int, Dict{String, Vector{Int}}}()
     override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
     total_signals_received = 0
 
@@ -741,13 +741,15 @@ function run_episodes(CAS_vec)
         save_autonomy_profile(C.𝒮.A.κ)
 
         if i%10 == 0
-            route_records[i] = Dict{Tuple{Int,Int}, Vector{Int}}()
-            for (init, goal) in test_tasks
+            route_records[i] = Dict{String, Vector{Int}}()
+            for k in keys(fixed_routes)
+                init, goal = fixed_routes[k]
                 set_route(M, C, init, goal)
                 generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
                 L = solve_model(C)
                 route = get_route(C, L)
-                route_records[i][(init, goal)] = route
+                route_records[i][k]["route"] = route
+                route_records[i][k]["expected cost"] = L.V[C.SIndex[C.s₀]]
             end
             push!(override_rate_records_by_ep, deepcopy(override_rate_records))
         end
@@ -794,13 +796,18 @@ function get_route(C, L)
     route = Vector{Int}()
     state = C.s₀
     while !(state ∈ C.G)
-        push!(route, state.id)
+        if typeof(state.state) == NodeState
+            push!(route, state.state.id)
+        end
         s = C.SIndex[state]
         a = L.π[s]
-        sp = T[s][a][1][1]
-        state = C.S[s]
+        println(state,  "     |     ", C.A[a])
+        state = generate_successor(M, state, C.A[a], '∅')
+        # sp = C.T[s][a][1][1]
+        # state = C.S[sp]
     end
-    push!(route, state.id)
+    push!(route, state.state.id)
+    return route
 end
 
 
@@ -813,12 +820,16 @@ init_data()
 M = build_model()
 C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
 L = solve_model(C)
-compute_level_optimality(C, L)
-update_autonomy_profile!(C,L)
-@show C.𝒮.A.κ[1356][5]
-@show C.𝒮.F.λ[1356][5]
-generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-solve(L, C, 3201)
+
+route_records = Dict{String, Vector{Int}}()
+for k in keys(fixed_routes)
+    init, goal = fixed_routes[k]
+    set_route(M, C, init, goal)
+    generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+    L = solve_model(C)
+    route = get_route(C, L)
+    route_records[k] = route
+end
 
 
 function debug_competence(C, L)
