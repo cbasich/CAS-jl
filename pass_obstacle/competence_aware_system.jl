@@ -527,9 +527,9 @@ end
 function compute_level_optimality(C, ℒ)
     total = 0
     lo = 0
-    for s in keys(ℒ.π)
-        state = C.S[s]
-    # for (s, state) in enumerate(C.S)
+    # for s in keys(ℒ.π)
+    #     state = C.S[s]
+    for (s, state) in enumerate(C.S)
         if terminal(C, state)
             continue
         end
@@ -542,18 +542,21 @@ function compute_level_optimality(C, ℒ)
     return lo/total
 end
 
-function simulate(M::CASSP, L)
+function simulate(M::CASSP, L, m)
     S, A, C = M.S, M.A, M.C
     c = Vector{Float64}()
     signal_count = 0
     actions_taken = 0
     actions_at_competence = 0
     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
-    for i ∈ 1:1
+    for i ∈ 1:m
         state = M.s₀
         episode_cost = 0.0
         while true
             s = M.SIndex[state]
+            if !haskey(override_rate_records, state)
+                override_rate_records[state] = [1 0]
+            end
             # println(state, "     ", s)
             a = solve(L, M, s)[1]
             action = A[a]
@@ -562,9 +565,11 @@ function simulate(M::CASSP, L)
             # println("Taking action $action in state $state.")
             if action.l == 1
                 σ = generate_feedback(state.state, action.action)
-                y = (σ == '∅')
-                d = hcat(get_state_features(state.state), y)
-                record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
+                if i == m
+                    y = (σ == '∅')
+                    d = hcat(get_state_features(state.state), y)
+                    record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
+                end
             else
                 σ = '∅'
             end
@@ -581,7 +586,10 @@ function simulate(M::CASSP, L)
             # end
             # println("received feedback: $σ")
             if σ != '∅'
-                signal_count += 1
+                override_rate_records[state][2] += 1
+                if i == m
+                    signal_count += 1
+                end
                 # println("Received feedback: $σ")
             end
             episode_cost += C(M, s, a)
@@ -651,12 +659,15 @@ function init_data()
     end
 end
 
+override_rate_records = Dict{DomainState, Array{Int}}()
+
 function run_episodes()
     los = Vector{Float64}()
     costs = Vector{Float64}()
     signal_counts = Vector{Int}()
     expected_costs = Vector{Float64}()
     lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
+    override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
     total_signals_received = 0
 
     M = build_model()
@@ -677,6 +688,10 @@ function run_episodes()
         update_autonomy_profile!(C, ℒ)
         save_autonomy_profile(C.𝒮.A.κ)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+
+        if i%10 == 0
+            push!(override_rate_records_by_ep, deepycopy(override_rate_rercords))
+        end
     end
 
     println(costs)

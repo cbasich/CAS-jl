@@ -476,13 +476,13 @@ end
 
 function generate_feedback(state::CASstate,
                           action::CASaction)
-    # if randn() <= 0.05
-    #     if action.l == 1
-    #         return ['⊕', '⊖'][rand(1:2)]
-    #     elseif action.l == 2
-    #         return ['∅', '⊘'][rand(1:2)]
-    #     end
-    # end
+    if randn() <= 0.05
+        if action.l == 1
+            return ['⊕', '⊖'][rand(1:2)]
+        elseif action.l == 2
+            return ['∅', '⊘'][rand(1:2)]
+        end
+    end
 
     if typeof(state.state) == EdgeState
         if state.state.o && state.state.l == 1
@@ -536,33 +536,41 @@ end
 function compute_level_optimality(C, ℒ)
     total = 0
     lo = 0
-    for s in keys(ℒ.π)
-    # for (s, state) in enumerate(C.S)
-    #     if terminal(C, state)
-    #         continue
-    #     end
-        # solve(ℒ, C, s)
+    # for s in keys(ℒ.π)
+    for (s, state) in enumerate(C.S)
+        if terminal(C, state)
+            continue
+        end
+        solve(ℒ, C, s)
         total += 1
         state = C.S[s]
         action = C.A[ℒ.π[s]]
         lo += (action.l == competence(state.state, action.action))
     end
+    # println("  ")
+    # println(lo)
+    # println(total)
 
     return lo/total
 end
 
 function simulate(M::CASSP, L)
     S, A, C = M.S, M.A, M.C
+    T_base = deepcopy(M.T)
     c = Vector{Float64}()
     signal_count = 0
     actions_taken = 0
     actions_at_competence = 0
+    expected_cost = L.V[M.SIndex[M.s₀]]
     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
-    for i ∈ 1:1
+    for i ∈ 1:10
         state = M.s₀
         episode_cost = 0.0
         while true
             s = M.SIndex[state]
+            if !haskey(override_rate_records, state)
+                override_rate_records[state] = [1 0]
+            end
             # println(state, "     ", s)
             a = solve(L, M, s)[1]
             action = A[a]
@@ -573,26 +581,33 @@ function simulate(M::CASSP, L)
                 σ = '∅'
             elseif action.l == 1
                 σ = generate_feedback(state, action)
-                y = (σ == '⊕') ? 1 : 0
-                d = hcat(get_state_features(state.state), 1, y)
-                if typeof(state.state) == NodeState
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                else
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
+                if i == 10
+                    y = (σ == '⊕') ? 1 : 0
+                    d = hcat(get_state_features(state.state), 1, y)
+                    if typeof(state.state) == NodeState
+                        record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
+                    else
+                        record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
+                    end
                 end
             elseif action.l == 2 || (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
                 σ = generate_feedback(state, action)
-                y = (σ == '∅') ? 1 : 0
-                d = hcat(get_state_features(state.state), 2, y)
-                if typeof(state.state) == NodeState
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                else
-                    record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
+                if i == 10
+                    y = (σ == '∅') ? 1 : 0
+                    d = hcat(get_state_features(state.state), 2, y)
+                    if typeof(state.state) == NodeState
+                        record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
+                    else
+                        record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
+                    end
                 end
             end
             # println("received feedback: $σ")
             if σ != '∅'
-                signal_count += 1
+                override_rate_records[state][2] += 1
+                if i == 10
+                    signal_count += 1
+                end
             end
             episode_cost += C(M, s, a)
             if σ == '⊖'
@@ -614,9 +629,10 @@ function simulate(M::CASSP, L)
         end
 
         push!(c, episode_cost)
+        M.T = T_base
     end
     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
-    return mean(c), signal_count, (actions_at_competence / actions_taken)
+    return mean(c), std(c), signal_count, (actions_at_competence / actions_taken), (abs(mean(c) - expected_cost)/expected_cost)
 end
 
 function build_cas(𝒟::DomainSSP,
@@ -663,6 +679,12 @@ function init_data()
     init_edge_data(joinpath(abspath(@__DIR__), "data", "edge_⤉.csv"))
 end
 
+function set_route(M, C, init, goal)
+    set_init!(M, init)
+    set_goal!(M, goal)
+    generate_transitions!(M, M.graph)
+    reset_problem!(M, C)
+end
 
 function random_route(M, C)
     init = rand([12, 1, 4, 16])
@@ -676,40 +698,76 @@ function random_route(M, C)
     reset_problem!(M, C)
 end
 
-function run_episodes()
-    # println("Starting")
+override_rate_records = Dict{DomainState, Array{Int}}()
 
-    # println("Built")
+function run_episodes(CAS_vec)
+    println("Starting")
+
+    # Tracking information
     los = Vector{Float64}()
     costs = Vector{Float64}()
+    stds = Vector{Float64}()
+    cost_errors = Vector{Float64}()
+    expected_task_costs = Vector{Float64}()
     signal_counts = Vector{Int}()
     lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
+    route_records = Dict{Int, Dict{Tuple{Int, Int}, Vector{Int}}}()
+    override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
     total_signals_received = 0
+
+
     M = build_model()
     C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+    push!(CAS_vec, deepcopy(C))
+
     for i=1:500
         ℒ = solve_model(C)
         lo = compute_level_optimality(C, ℒ)
-        println(i, "  |  ", M.s₀.id, "→", first(M.G).id, "  |  ", lo)
+
+        println(i, "  |  Task: ", M.s₀.id, "→", first(M.G).id, "  |  ", lo)
         push!(los, lo)
-        c, signal_count, percent_lo = simulate(C, ℒ)
+
+        c, std, signal_count, percent_lo, error = simulate(C, ℒ)
         push!(costs, c)
-        # push!(c, simulate(C, ℒ))
+        push!(stds, std)
+        push!(cost_errors, error)
         total_signals_received += signal_count
         push!(signal_counts, total_signals_received)
         push!(lo_function_of_signal_count, (total_signals_received, percent_lo))
+
         update_feedback_profile!(C)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
         update_autonomy_profile!(C, ℒ)
         save_autonomy_profile(C.𝒮.A.κ)
+
+        if i%10 == 0
+            route_records[i] = Dict{Tuple{Int,Int}, Vector{Int}}()
+            for (init, goal) in test_tasks
+                set_route(M, C, init, goal)
+                generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+                L = solve_model(C)
+                route = get_route(C, L)
+                route_records[i][(init, goal)] = route
+            end
+            push!(override_rate_records_by_ep, deepcopy(override_rate_records))
+        end
+
+        set_route(M, C, 12, 7)
+        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        L = solve_model(C)
+        push!(expected_task_costs, L.V[C.SIndex[C.s₀]])
+
         random_route(M, C)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
     end
 
     println(costs)
+    println(stds)
+    println(cost_errors)
     println(los)
     println(lo_function_of_signal_count)
     println(signal_counts)
+    println(expected_task_costs)
 
     x = [i[1] for i in lo_function_of_signal_count]
     y = [i[2] for i in lo_function_of_signal_count]
@@ -717,12 +775,39 @@ function run_episodes()
     g = scatter(x, los, xlabel="Signals Received", ylabel="Level Optimality")
     savefig(g, "level_optimality_by_signal_count.png")
 
-    g2 = scatter(x, y, xlabel="Signals Received", ylabel="Level Optimality")
-    savefig(g2, "lo_encountered.png")
+    # g2 = scatter(x, y, xlabel="Signals Received", ylabel="Level Optimality")
+    # savefig(g2, "lo_encountered.png")
+
+    g3 = scatter(x, cost_errors, xlabel="Signals Received", ylabel="%Error")
+    savefig(g3, "percent_error.png")
+
+    g4 = scatter(x, stds, xlabel="Signals Received", ylabel="Reliability")
+    savefig(g4, "percent_error.png")
+
+    g5 = scatter(x=1:300, y=expected_task_costs, xlabel="Episode", ylabel="Expected Cost to Goal")
+    savefig(g5, "expected_goal_fixed_tas.png")
+
+    return costs, stds, cost_errors, los, lo_function_of_signal_count, signal_counts, expected_task_costs
 end
 
-run_episodes()
+function get_route(C, L)
+    route = Vector{Int}()
+    state = C.s₀
+    while !(state ∈ C.G)
+        push!(route, state.id)
+        s = C.SIndex[state]
+        a = L.π[s]
+        sp = T[s][a][1][1]
+        state = C.S[s]
+    end
+    push!(route, state.id)
+end
 
+
+
+CAS_vec = Vector{CASSP}()
+results2 = run_episodes(CAS_vec)
+results = run_episodes(CAS_vec)
 init_data()
 
 M = build_model()

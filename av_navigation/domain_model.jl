@@ -46,22 +46,22 @@ struct Graph
 end
 
 struct NodeState
-    id::Int
-    p::Bool
-    o::Bool
-    v::Int
-    θ::Char
+    id::Int         # Node ID
+    p::Bool         # Boolean existence of pedestrians
+    o::Bool         # Boolean existence of occlusion
+    v::Int          # Number of blocking vehicles
+    θ::Char         # Direction (orientation) of travel
 end
 function NodeState()
     return NodeState(-1, false, false, 0, '↑')
 end
 
 struct EdgeState
-    u::Int
-    v::Int
-    θ::Char
-    o::Bool
-    l::Int
+    u::Int          # Node ID of edge origin
+    v::Int          # Node ID of edge destination
+    θ::Char         # Direction (orientation) of travel
+    o::Bool         # Boolean existence of obstruction in road
+    l::Int          # Number of lanes on road
 end
 function EdgeState()
     return EdgeState(false, -1, -1)
@@ -482,11 +482,11 @@ function build_model()
     # G = generate_map(filepath)
     # G = generate_dummy_graph()
     graph = generate_ma_graph()
-    init = 1 # rand(1:16)
-    goal = 5 # rand(1:16)
-    # while goal == init
-    #     goal = rand(1:16)
-    # end
+    init = rand(1:16)
+    goal = rand(1:16)
+    while goal == init
+        goal = rand(1:16)
+    end
     S, s₀, G = generate_states(graph, init, goal)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
