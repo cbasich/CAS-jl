@@ -1,0 +1,88 @@
+EXPERIMENTATION OUTLINE
+
+3 things to do:
+   1) We need to better demonstrate the usefulness of CAS comparatively
+   2) We need to better motivate the IRS approach with a better example.
+   3) We need to include a result on sub-competencies or otherwise remove fully.
+
+Generally, we lack "comparative results" much like I complained about in my review
+against other papers or methods for "similar things". We compare modeling competence
+versus not modeling competence, but we don't compare modeling competence versus
+doing some other sort of augmented autonomy approach.
+
+(1) Base CAS Experimentation
+   -- Add some additional visualization to help demonstrate the effect of the results.
+      -- AV Navigation: Pick a nav task and show the route development over time.
+      -- Pass Obstacle: Maybe show a progression of heat maps of overrides by position.
+   -- Consider an additional experimental domain, or a re-skinning of CDR:
+      -- "Office Assistant Robot" and we can cite or harken to COBOTS.
+
+(2) ISR Experimentation
+   -- We need additional results beyond the campus robot experiment that we have
+      which is also the same as the previous paper's domain, so I can see why
+      that wouldn't be seen as sufficient.
+   -- Doing this approach on av nav would be a bit more well-motivated,
+      particularly because I think we can more easily introduce some additional
+      consumer-driven features that are more preference based and easier to
+      argue are learned/identified online only
+
+   New Features To Learn Online:
+      Experimental Setup: 3 different drivers each with different
+         "Person 1" (Socially Anxious / Low Trust)
+            -- Trailing Vehicle (Applies Social Pressure to Act)
+            -- Wait time?
+
+(3) Sub-Competency Experimentation?
+      -- Perceptual subcompetency
+         - In presence of glare (?) object detection has chance of failure.
+      -- Motion control subcompetence
+         - On wet roads, traction can be poor leading to worse handling at
+           higher speeds, slippage in lane, longer time to brake.
+
+
+Campus delivery robot we can maybe better motivate specifically as a deployed
+consumer system in an a priori unknown environment.
+   I think that part of the issue here may be the fact that things like "visibility"
+   or "traffic" really SHOULD be considered a priori it simply doesn't make any
+   sense not to do so.
+   Maybe an "office assistant" robot where the "users" don't want the system to
+   do certain things so again it's really a user preference based design question.
+   The downside is that this doesn't exactly fit into the "risk sensitive" issue
+   prompt...
+   The Nissan project showed us though that there *will* be technical properties
+   related to safety and reliability and performance that are not always going
+   to be known a priori.
+
+
+New Experiments List:
+
+(1) AV Navigation Route Development.
+X  (1.1) Record rate of overrides per edge and node to create a "heat map" of
+         overrides overlay over the map to show challenging locations.
+X  (1.2) Record the route taken between every (in a set?) pair of nodes in the
+         map each episode to show the development of the route over time as the
+         competence of the agent is learned wrt challenging parts of the graph.
+   (1.3) Spend some time on the parameters of the map (graph) itself to make
+         it so that the different edges and nodes are more "unique" to help
+         demonstrate points 1.1 and 1.2 more effectively.
+
+(2) AV Pass Obstacle
+X  (2.1) Record rate of override / transfer of control to create a "heat map"
+         of where they are occurring, ideally showing that over time they start
+         occurring both *less* and also earlier on in the process.
+
+(3) Better ISR Experiment
+
+(4) Sub-Competency Experiment
+   (4.1) Implement 2 sub-competencies
+         (4.1.1) Perception sub-competency
+         (4.1.2) Lane control sub-Competency
+
+
+New Story:
+
+   (1) Introduce the competence aware system and demonstrate its efficacy.
+   (2) However, it is limited by the features in its a fixed a priori model.
+      (2.1) This is corroborated by work we did on the real AV.
+   (3) Hence we introduce the ISR approach to handle three abilities:
+      (3.1) Helping
