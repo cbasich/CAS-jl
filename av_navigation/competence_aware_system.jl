@@ -1,5 +1,16 @@
 import Combinatorics
 
+import Base: GLOBAL_RNG, isslotfilled, rand
+function rand(r, s::Set)
+    isempty(s) && throw(ArgumentError("set must be non-empty"))
+    n = length(s.dict.slots)
+    while true
+        i = rand(r, 1:n)
+        isslotfilled(s.dict, i) && return s.dict.keys[i]
+    end
+end
+rand(s::Set) = rand(Base.GLOBAL_RNG, s)
+
 using Plots
 using GLM
 using DataFrames
@@ -9,6 +20,7 @@ using JLD
 include("domain_model.jl")
 include("../LAOStarSolver.jl")
 include("../utils.jl")
+include("../ValueIterationSolver.jl")
 
 struct CASstate
     state::DomainState
@@ -33,21 +45,26 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            if typeof(state) == NodeState
-                if action.value == '⤉' || action.value == '↓'
-                    κ[s][a] = 3
-                elseif state.p == true || state.o == true || state.v > 1
-                    κ[s][a] = 1
-                else
-                    κ[s][a] = 3
-                end
+            if typeof(state) == EdgeState && action.value == '↑'
+                κ[s][a] = 3
             else
-                if state.o == true
-                    κ[s][a] = 1
-                else
-                    κ[s][a] = 3
-                end
+                κ[s][a] = 2
             end
+            # if typeof(state) == NodeState
+            #     if action.value == '⤉' || action.value == '↓'
+            #         κ[s][a] = 3
+            #     elseif state.p == true || state.o == true || state.v > 1
+            #         κ[s][a] = 1
+            #     else
+            #         κ[s][a] = 3
+            #     end
+            # else
+            #     if state.o == true
+            #         κ[s][a] = 1
+            #     else
+            #         κ[s][a] = 3
+            #     end
+            # end
         end
     end
     return κ
@@ -56,7 +73,7 @@ end
 function update_potential(C, ℒ, s, a, L)
     state = CASstate(C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
-    X = [lookahead(ℒ, C, s2, ((a - 1) * 4 + l + 1) ) for l ∈ L]
+    X = [lookahead(ℒ, s2, ((a - 1) * 4 + l + 1) ) for l ∈ L]
     P = .75 .* softmax(-1.0 .* X)
     for l=1:size(L)[1]
         C.potential[s][a][L[l]+1] += P[l]
@@ -173,6 +190,7 @@ struct FeedbackModel
     Σ::Vector{Char}
     λ::Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}
     ρ::Function
+    D::Dict{String, Dict{String, DataFrame}}
 end
 
 function get_state_features(state)
@@ -185,21 +203,24 @@ end
 
 function generate_feedback_profile(𝒟::DomainSSP,
                                    Σ::Vector{Char},
-                                   L::Vector{Int})
+                                   L::Vector{Int},
+                                   D::Dict{String, Dict{String, DataFrame}})
     λ = Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}()
     for (s, state) in enumerate(𝒟.S)
         f = get_state_features(state)
         λ[s] = Dict{Int, Dict{Int, Dict{Char, Float64}}}()
         for (a, action) in enumerate(𝒟.A)
             if typeof(state) == NodeState
-                X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
+                # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
+                X, Y = split_data(D["node"][string(action.value)])
                 fm = @formula(y ~ x1 + x2 + x3 + x4)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x3 => DummyCoding()))
             else
                 if action.value ∉ ['↑', '⤉']
                     continue
                 end
-                X, Y = read_data(joinpath(abspath(@__DIR__), "data", "edge_$(action.value).csv"))
+                # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "edge_$(action.value).csv"))
+                X, Y = split_data(D["edge"][string(action.value)])
                 fm = @formula(y ~ x1 + x2 + x3)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x2 => DummyCoding()))
             end
@@ -222,20 +243,22 @@ function generate_feedback_profile(𝒟::DomainSSP,
 end
 
 function update_feedback_profile!(C)
-    λ, 𝒟, Σ, L = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L
+    λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
     for (s, state) in enumerate(𝒟.S)
         f = get_state_features(state)
         λ[s] = Dict{Int, Dict{Int, Dict{Char, Float64}}}()
         for (a, action) in enumerate(𝒟.A)
             if typeof(state) == NodeState
-                X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
+                # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
+                X, Y = split_data(D["node"][string(action.value)])
                 fm = @formula(y ~ x1 + x2 + x3 + x4)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x3 => DummyCoding()))
             else
                 if action.value ∉ ['↑', '⤉']
                     continue
                 end
-                X, Y = read_data(joinpath(abspath(@__DIR__), "data", "edge_$(action.value).csv"))
+                # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "edge_$(action.value).csv"))
+                X, Y = split_data(D["edge"][string(action.value)])
                 fm = @formula(y ~ x1 + x2 + x3)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x2 => DummyCoding()))
             end
@@ -267,8 +290,17 @@ function load_feedback_profile()
     return load(joinpath(abspath(@__DIR__), "params.jld", "λ"))
 end
 
+function save_data(D)
+    for k in keys(D["edge"])
+        record_data(D["edge"][k], joinpath(abspath(@__DIR__), "data", "edge_$k.csv"), false)
+    end
+    for k in keys(D["node"])
+        record_data(D["node"][k], joinpath(abspath(@__DIR__), "data", "node_$k.csv"), false)
+    end
+end
+
 function human_cost(action::CASaction)
-    return [8.0 3. 1. 0.][action.l + 1]              #TODO: Fix this.
+    return [3. 1. .5 0.][action.l + 1]              #TODO: Fix this.
 end
 ##
 
@@ -451,13 +483,12 @@ end
 function block_transition!(C::CASSP,
                        state::CASstate,
                       action::CASaction)
-    T = C.T
     state′ = CASstate(state.state, '⊕')
-    s, a = C.SIndex[state], C.AIndex[action]
-    T[s][a] = [(s, 1.0)]
-    T[s+1][a] = [(s+1, 1.0)]
-    T[s+2][a] = [(s+2, 1.0)]
-    T[s+3][a] = [(s+3, 1.0)]
+    s, a = C.SIndex[state′], C.AIndex[action]
+    # T[s][a] = [(s, 1.0)]
+    C.T[s+1][a] = [(s+1, 1.0)]
+    C.T[s+2][a] = [(s+2, 1.0)]
+    C.T[s+3][a] = [(s+3, 1.0)]
 end
 
 function generate_costs(C::CASSP,
@@ -468,15 +499,12 @@ function generate_costs(C::CASSP,
     cost = D.C(D, D.SIndex[state.state], D.AIndex[action.action])
     cost += A.μ(state)
     cost += F.ρ(action)
-    # if action.l ∉ [0, C.𝒮.A.κ[ceil(s/4)][ceil(a/4)]]
-    #     cost += 100.
-    # end
     return cost
 end
 
 function generate_feedback(state::CASstate,
                           action::CASaction)
-    if randn() <= 0.05
+    if rand() <= 0.05
         if action.l == 1
             return ['⊕', '⊖'][rand(1:2)]
         elseif action.l == 2
@@ -533,106 +561,55 @@ function generate_successor(M::DomainSSP,
     end
 end
 
+function reachable(C, L)
+    s, S = C.SIndex[C.s₀], C.S
+    reachable = Set{Int}()
+    to_visit = Vector{Int}()
+    push!(to_visit, s)
+    while !isempty(to_visit)
+        if terminal(C, C.S[s])
+            s = pop!(to_visit)
+            continue
+        end
+        a = solve(L, C, s)[1]
+        for (sp, p) in C.T[s][a]
+            if sp ∉ reachable && p > 0.0
+                push!(to_visit, sp)
+                push!(reachable, sp)
+            end
+        end
+        s = pop!(to_visit)
+    end
+    return reachable
+end
+
 function compute_level_optimality(C, ℒ)
     total = 0
+    r = 0
     lo = 0
+    lo_r = 0
     # for s in keys(ℒ.π)
+    R = reachable(C, ℒ)
     for (s, state) in enumerate(C.S)
         if terminal(C, state)
             continue
         end
         solve(ℒ, C, s)
         total += 1
-        state = C.S[s]
+        # state = C.S[s]
         action = C.A[ℒ.π[s]]
-        lo += (action.l == competence(state.state, action.action))
+        comp = (action.l == competence(state.state, action.action))
+        lo += comp
+        if s in R
+            r += 1
+            lo_r += comp
+        end
     end
     # println("  ")
     # println(lo)
     # println(total)
 
-    return lo/total
-end
-
-function simulate(M::CASSP, L)
-    S, A, C = M.S, M.A, M.C
-    T_base = deepcopy(M.T)
-    c = Vector{Float64}()
-    signal_count = 0
-    actions_taken = 0
-    actions_at_competence = 0
-    expected_cost = L.V[M.SIndex[M.s₀]]
-    # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
-    for i ∈ 1:10
-        state = M.s₀
-        episode_cost = 0.0
-        while true
-            s = M.SIndex[state]
-            if !haskey(override_rate_records, state)
-                override_rate_records[state] = [1 0]
-            end
-            # println(state, "     ", s)
-            a = solve(L, M, s)[1]
-            action = A[a]
-            actions_taken += 1
-            actions_at_competence += (action.l == competence(state.state, action.action))
-            # println("Taking action $action in state $state.")
-            if action.l == 0 || action.l == 3
-                σ = '∅'
-            elseif action.l == 1
-                σ = generate_feedback(state, action)
-                if i == 10
-                    y = (σ == '⊕') ? 1 : 0
-                    d = hcat(get_state_features(state.state), 1, y)
-                    if typeof(state.state) == NodeState
-                        record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                    else
-                        record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
-                    end
-                end
-            elseif action.l == 2 || (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
-                σ = generate_feedback(state, action)
-                if i == 10
-                    y = (σ == '∅') ? 1 : 0
-                    d = hcat(get_state_features(state.state), 2, y)
-                    if typeof(state.state) == NodeState
-                        record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                    else
-                        record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
-                    end
-                end
-            end
-            # println("received feedback: $σ")
-            if σ != '∅'
-                override_rate_records[state][2] += 1
-                if i == 10
-                    signal_count += 1
-                end
-            end
-            episode_cost += C(M, s, a)
-            if σ == '⊖'
-                block_transition!(M, state, action)
-                state = CASstate(state.state, '∅')
-                # M.s₀ = state
-                L = solve_model(M)
-                continue
-            end
-            if action.l == 0 || σ == '⊘'
-                state = M.S[M.T[s][a][1][1]]
-            else
-                state = generate_successor(M.𝒮.D, state, action, σ)
-            end
-            # println(σ, "     | succ state |      ", state)
-            if terminal(M, state)
-                break
-            end
-        end
-
-        push!(c, episode_cost)
-        M.T = T_base
-    end
-    println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
-    return mean(c), std(c), signal_count, (actions_at_competence / actions_taken), (abs(mean(c) - expected_cost)/expected_cost)
+    return lo/total, lo_r/r
 end
 
 function build_cas(𝒟::DomainSSP,
@@ -643,11 +620,20 @@ function build_cas(𝒟::DomainSSP,
     else
         κ = generate_autonomy_profile(𝒟)
     end
-
     𝒜 = AutonomyModel(L, κ, autonomy_cost)
 
-    λ = generate_feedback_profile(𝒟, Σ, L)
-    ℱ = FeedbackModel(Σ, λ, human_cost)
+    D = Dict{String, Dict{String, DataFrame}}()
+
+    D["node"] = Dict{String, DataFrame}()
+    for a in ["↑", "→", "↓", "←", "⤉"]
+        D["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "node_$a.csv")))
+    end
+    D["edge"] = Dict{String, DataFrame}()
+    for a in ["↑", "⤉"]
+        D["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "edge_$a.csv")))
+    end
+    λ = generate_feedback_profile(𝒟, Σ, L, D)
+    ℱ = FeedbackModel(Σ, λ, human_cost, D)
     𝒮 = CAS(𝒟, 𝒜, ℱ)
     S, s₀, G = generate_states(𝒟, ℱ)
     A = generate_actions(𝒟, 𝒜)
@@ -660,13 +646,10 @@ function build_cas(𝒟::DomainSSP,
 end
 
 function solve_model(C::CASSP)
-    ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
-                        zeros(length(C.S)), zeros(length(C.S)),
-                        zeros(length(C.S)), zeros(length(C.A)),
-                        zeros(Bool, length(C.S)))
-    a, total_expanded = solve(ℒ, C, C.SIndex[C.s₀])
-    # println("LAO* expanded $total_expanded nodes.")
-    # println("Expected cost to goal: $(ℒ.V[C.SIndex[C.s₀]])")
+    ℒ = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
+                     false, Set{Int}(), zeros(length(C.S)),
+                                        zeros(length(C.A)))
+    solve(ℒ, C, C.SIndex[C.s₀])
     return ℒ
 end
 
@@ -698,109 +681,17 @@ function random_route(M, C)
     reset_problem!(M, C)
 end
 
-override_rate_records = Dict{DomainState, Array{Int}}()
 
-function run_episodes(CAS_vec)
-    println("Starting")
-
-    # Tracking information
-    los = Vector{Float64}()
-    costs = Vector{Float64}()
-    stds = Vector{Float64}()
-    cost_errors = Vector{Float64}()
-    expected_task_costs = Vector{Float64}()
-    signal_counts = Vector{Int}()
-    lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
-    route_records = Dict{Int, Dict{String, Vector{Int}}}()
-    override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
-    total_signals_received = 0
-
-
-    M = build_model()
-    C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
-    push!(CAS_vec, deepcopy(C))
-
-    for i=1:500
-        ℒ = solve_model(C)
-        lo = compute_level_optimality(C, ℒ)
-
-        println(i, "  |  Task: ", M.s₀.id, "→", first(M.G).id, "  |  ", lo)
-        push!(los, lo)
-
-        c, std, signal_count, percent_lo, error = simulate(C, ℒ)
-        push!(costs, c)
-        push!(stds, std)
-        push!(cost_errors, error)
-        total_signals_received += signal_count
-        push!(signal_counts, total_signals_received)
-        push!(lo_function_of_signal_count, (total_signals_received, percent_lo))
-
-        update_feedback_profile!(C)
-        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-        update_autonomy_profile!(C, ℒ)
-        save_autonomy_profile(C.𝒮.A.κ)
-
-        if i%10 == 0
-            route_records[i] = Dict{String, Vector{Int}}()
-            for k in keys(fixed_routes)
-                init, goal = fixed_routes[k]
-                set_route(M, C, init, goal)
-                generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-                L = solve_model(C)
-                route = get_route(C, L)
-                route_records[i][k]["route"] = route
-                route_records[i][k]["expected cost"] = L.V[C.SIndex[C.s₀]]
-            end
-            push!(override_rate_records_by_ep, deepcopy(override_rate_records))
-        end
-
-        set_route(M, C, 12, 7)
-        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-        L = solve_model(C)
-        push!(expected_task_costs, L.V[C.SIndex[C.s₀]])
-
-        random_route(M, C)
-        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-    end
-
-    println(costs)
-    println(stds)
-    println(cost_errors)
-    println(los)
-    println(lo_function_of_signal_count)
-    println(signal_counts)
-    println(expected_task_costs)
-
-    x = [i[1] for i in lo_function_of_signal_count]
-    y = [i[2] for i in lo_function_of_signal_count]
-
-    g = scatter(x, los, xlabel="Signals Received", ylabel="Level Optimality")
-    savefig(g, "level_optimality_by_signal_count.png")
-
-    # g2 = scatter(x, y, xlabel="Signals Received", ylabel="Level Optimality")
-    # savefig(g2, "lo_encountered.png")
-
-    g3 = scatter(x, cost_errors, xlabel="Signals Received", ylabel="%Error")
-    savefig(g3, "percent_error.png")
-
-    g4 = scatter(x, stds, xlabel="Signals Received", ylabel="Reliability")
-    savefig(g4, "percent_error.png")
-
-    g5 = scatter(x=1:300, y=expected_task_costs, xlabel="Episode", ylabel="Expected Cost to Goal")
-    savefig(g5, "expected_goal_fixed_tas.png")
-
-    return costs, stds, cost_errors, los, lo_function_of_signal_count, signal_counts, expected_task_costs
-end
-
-function get_route(C, L)
+function get_route(M, C, L)
     route = Vector{Int}()
     state = C.s₀
     while !(state ∈ C.G)
-        if typeof(state.state) == NodeState
+        if typeof(state.state) == NodeState && (isempty(route) || last(route) != state.state.id)
             push!(route, state.state.id)
         end
         s = C.SIndex[state]
-        a = L.π[s]
+        # a = L.π[s]
+        a = solve(L, C, s)[1]
         println(state,  "     |     ", C.A[a])
         state = generate_successor(M, state, C.A[a], '∅')
         # sp = C.T[s][a][1][1]
@@ -809,28 +700,6 @@ function get_route(C, L)
     push!(route, state.state.id)
     return route
 end
-
-
-
-CAS_vec = Vector{CASSP}()
-results2 = run_episodes(CAS_vec)
-results = run_episodes(CAS_vec)
-init_data()
-
-M = build_model()
-C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
-L = solve_model(C)
-
-route_records = Dict{String, Vector{Int}}()
-for k in keys(fixed_routes)
-    init, goal = fixed_routes[k]
-    set_route(M, C, init, goal)
-    generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-    L = solve_model(C)
-    route = get_route(C, L)
-    route_records[k] = route
-end
-
 
 function debug_competence(C, L)
     κ, λ, D = C.𝒮.A.κ, C.𝒮.F.λ, C.𝒮.D
@@ -854,4 +723,4 @@ function debug_competence(C, L)
         end
     end
 end
-debug_competence(C, L)
+# debug_competence(C, L)

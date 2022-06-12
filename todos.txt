@@ -1,0 +1,16 @@
+(1) Level Optimality 
+  -- Not increasing in a significant or meaningful way.
+  -- Plot is totally scattered, only a few things are updating to competence.
+  -- Possibly a problem with the LO calculation being just on states in L.π
+
+(2) Cost function
+  -- No change in routes at all.
+  -- Autonomy and Human cost are simply way out of scale compared to movement.
+  -- Consider either a more principled way of computing the above cost functions
+     that would also increase them in a meaningful way, or alternatively
+     lexicographic SSP?
+
+(3) Transition Function
+  -- For the domain model, change intersections to have probability of not moving
+     similar to edges, to make it so that they don't have just "unit cost" all the time
+     which is a problem.

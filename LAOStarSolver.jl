@@ -34,7 +34,7 @@ function backup(ℒ::LAOStarSolver,
     for a = 1:length(M.A)
         # ℒ.Qs[a] = lookahead(ℒ, M, s, a)
         if !allowed(M, s, a)
-            ℒ.Qs[a] = 1000.0
+            ℒ.Qs[a] = ℒ.dead_end_cost
         else
             ℒ.Qs[a] = lookahead(ℒ, M, s, a)
         end

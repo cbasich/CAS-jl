@@ -1,10 +1,16 @@
-# using CSV
-# using DataFrames
+using CSV
+using DataFrames
 using Flux
 # using GLM
 
 function record_data(data, filepath, append=true)
     CSV.write(filepath, DataFrame(data, :auto), append=append, header=false)
+end
+function record_data(data::DataFrame, filepath, append=false)
+    CSV.write(filepath, data, append=append, header=false)
+end
+function record_data!(data, df)
+    push!(df, data)
 end
 
 function init_pass_obstacle_data(filepath)
@@ -56,9 +62,6 @@ function init_edge_data(filepath)
     record_data(d, filepath, false)
 end
 
-init_node_data("av_navigation\\data\\node_↑.csv")
-
-
 function read_data(filepath)
     df = DataFrame(CSV.File(filepath))
     X = select(df, Not(last(names(df))))
@@ -67,6 +70,17 @@ function read_data(filepath)
     rename!(Y, [:y])
     return X, Y
 end
+
+function split_data(df::DataFrame)
+    X = select(df, Not(last(names(df))))
+    rename!(X, [Symbol("x$i") for i in 1:size(names(X))[1]])
+    Y = select(df, last(names(df)))
+    rename!(Y, [:y])
+    return X, Y
+end
+
+# D = DataFrame(CSV.File("pass_obstacle\\data\\go.csv"))
+
 
 # function OneHot(data)
 #     if size(unique(data[:, 1])) == (2,)

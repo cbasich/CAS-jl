@@ -279,6 +279,6 @@ fixed_routes = Dict(
     "UMass to Amherst 2" => (7, 11),
     "Sunderland to UMass" => (2, 7),
     "UMass to Sunderland" => (7, 2),
-    "Amherst 1 to Sunderland" => (11, 2),
+    "Amherst 1 to Sunderland" => (10, 2),
     "Sunderland to Amherst 1" => (2, 11)
 )

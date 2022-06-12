@@ -414,9 +414,15 @@ end
 function generate_costs(M::DomainSSP, s::Int, a::Int)
     if terminal(M, M.S[s])
         return 0.0
+    elseif M.T[s][a] == (s, 1.0)
+        return 100.0
+    else
+        if typeof(M.S[s]) == NodeState
+            return 1.0
+        else
+            return 0.1
+        end
     end
-    return 1.0
-    # M.C = [[1.0 for a=1:length(M.A)] for s=1:length(M.S)]
 end
 
 function check_transition_validity(ℳ::DomainSSP)
@@ -497,9 +503,15 @@ function build_model()
 end
 
 function solve_model(M::DomainSSP)
+    # ℒ = LRTDPsolver(M, 10000., 100, .001, Dict{Int, Int}(),
+    #                  false, Set{Int}(), zeros(length(M.S)),
+    #                                     zeros(length(M.A)))
+    # solve(ℒ, M, M.SIndex[M.s₀])
+    # return ℒ
     ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
                         zeros(length(M.S)), zeros(length(M.S)),
-                        zeros(length(M.S)), zeros(length(M.A)))
+                        zeros(length(M.S)), zeros(length(M.A)),
+                        [false for i=1:length(M.S)])
     a, total_expanded = solve(ℒ, M, M.SIndex[M.s₀])
     println("LAO* expanded $total_expanded nodes.")
     println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
