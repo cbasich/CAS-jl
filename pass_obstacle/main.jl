@@ -70,9 +70,9 @@ function simulate(M::CASSP, L, m)
             actions_taken += 1
             actions_at_competence += (action.l == competence(state.state, action.action))
             # println("$i   |   Taking action $action in state $state.")
-            if action.l == 0 || action.l == 3
+            if action.l == 0 || action.l == 2
                 σ = '∅'
-            elseif action.l == 1
+            else
                 σ = generate_feedback(state.state, action.action)
                 if i == m
                     y = (σ == '∅')
@@ -80,13 +80,12 @@ function simulate(M::CASSP, L, m)
                     # record_data(d,joinpath(abspath(@__DIR__), "data", "$(action.action.value).csv"))
                     record_data!(d, M.𝒮.F.D[string(action.action.value)])
                 end
-            else
-                σ  = '∅'
             end
             # println("received feedback: $σ")
-            if σ != '∅'
+            if σ == '⊘'
                 override_rate_records_per_ep[state.state][2] += 1
                 if i == m
+                    println("override detected at state:     $state      |     action: $action")
                     signal_count += 1
                 end
             end
@@ -123,8 +122,8 @@ function run_episodes(M, C, L)
     lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
     # override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
     total_signals_received = 0
-
-    for i=1:2000
+    results = []
+    for i=1:1000
         println(i)
         ℒ = solve_model(C)
         c, std, signal_count, percent_lo, error = simulate(C, ℒ, 100)
@@ -144,16 +143,15 @@ function run_episodes(M, C, L)
             push!(signal_counts_per_10, total_signals_received)
             # push!(override_rate_records_by_ep, deepcopy(override_rate_records))
 
-            for (a, data) in C.𝒮.F.D
-                record_data(data,joinpath(abspath(@__DIR__), "data", "$a.csv"), false)
-            end
+            # for (a, data) in C.𝒮.F.D
+            #     record_data(data,joinpath(abspath(@__DIR__), "data", "$a.csv"), false)
+            # end
         end
 
         # Update model
         # println("Updating Model.")
         update_feedback_profile!(C)
         update_autonomy_profile!(C, ℒ)
-        save_data(C.𝒮.F.D)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 
         results = [costs, stds, cost_errors, los, lo_function_of_signal_count, signal_counts, expected_task_costs]
@@ -173,7 +171,7 @@ function run_episodes(M, C, L)
         g4 = scatter(x, costs, xlabel="Episode", ylabel="Cost to Goal")
         savefig(g4, joinpath(abspath(@__DIR__), "plots", "task_cost.png"))
     end
-
+    save_data(C.𝒮.F.D)
     save_autonomy_profile(C.𝒮.A.κ)
 
     println(costs)
@@ -190,7 +188,6 @@ end
 init_data()
 M = build_model()
 C = build_cas(M, [0,1,2], ['∅', '⊘'])
-L = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
-                 false, Set{Int}(), zeros(length(C.S)), zeros(length(C.A)))
+L = solve_model(C)
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
 results = run_episodes(M, C, L)

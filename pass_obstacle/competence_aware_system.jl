@@ -5,6 +5,7 @@ using GLM
 using DataFrames
 using CSV
 using JLD
+using StatsBase
 
 include("domain_model.jl")
 # include("../LAOStarSolver.jl")
@@ -62,37 +63,61 @@ function update_autonomy_profile!(C, ℒ)
             # L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
             L = [0, 1, 2]
             update_potential(C, ℒ, s, a, L)
+            distr = softmax([C.potential[s][a][l+1] for l in L])
+            i = sample(aweights(distr))
+
+            if L[i] == 2
+                if C.𝒮.F.λ[s][a][1]['∅'] < 0.65
+                    C.potential[s][a][L[i]+1] = 0.0
+                    continue
+                end
+            elseif L[i] == 0
+                if C.𝒮.F.λ[s][a][1]['∅'] > 0.35
+                    C.potential[s][a][L[i]+1] = 0.0
+                    continue
+                end
+            elseif L[i] == κ[s][a]
+                C.potential[s][a][L[i]+1] = 0.0
+                continue
+            end
+
+            if L[i] == competence(state, action)
+                println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
+            end
+
+            C.𝒮.A.κ[s][a] = L[i]
+            C.potential[s][a][L[i]+1] = 0.0
 
             # r = rand()
-            for i in sortperm(-[C.potential[s][a][l+1] for l in L])
-                if rand() <= C.potential[s][a][L[i] + 1]
-                    if L[i] == 2
-                        if C.𝒮.F.λ[s][a][1]['∅'] < 0.85
-                            C.potential[s][a][L[i]+1] = 0.0
-                            break
-                        end
-                    elseif L[i] == 0
-                        if C.𝒮.F.λ[s][a][1]['∅'] > 0.35
-                            C.potential[s][a][L[i]+1] = 0.0
-                            break
-                        end
-                    elseif L[i] == κ[s][a]
-                        C.potential[s][a][L[i]+1] = 0.0
-                        break
-                    end
-
-                    if L[i] == competence(state, action)
-                        println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
-                    end
-
-                    C.𝒮.A.κ[s][a] = L[i]
-                    C.potential[s][a][L[i]+1] = 0.0
-                    # if L[2] == 1 && L[i] == 2
-                    #     C.flags[s][a] = true
-                    # end
-                    break
-                end
-            end
+            # for i in sortperm(-[C.potential[s][a][l+1] for l in L])
+            #     if rand() <= C.potential[s][a][L[i] + 1]
+            #         if L[i] == 2
+            #             if C.𝒮.F.λ[s][a][1]['∅'] < 0.85
+            #                 C.potential[s][a][L[i]+1] = 0.0
+            #                 break
+            #             end
+            #         elseif L[i] == 0
+            #             if C.𝒮.F.λ[s][a][1]['∅'] > 0.35
+            #                 C.potential[s][a][L[i]+1] = 0.0
+            #                 break
+            #             end
+            #         elseif L[i] == κ[s][a]
+            #             C.potential[s][a][L[i]+1] = 0.0
+            #             break
+            #         end
+            #
+            #         if L[i] == competence(state, action)
+            #             println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
+            #         end
+            #
+            #         C.𝒮.A.κ[s][a] = L[i]
+            #         C.potential[s][a][L[i]+1] = 0.0
+            #         # if L[2] == 1 && L[i] == 2
+            #         #     C.flags[s][a] = true
+            #         # end
+            #         break
+            #     end
+            # end
         end
     end
 end
@@ -188,7 +213,7 @@ function autonomy_cost(state::CASstate)
     if state.σ == '∅'
         return 0.0
     elseif state.σ == '⊘'
-        return 12.0
+        return 3.5
     end
 end
 ##
@@ -227,11 +252,15 @@ function generate_feedback_profile(𝒟::DomainSSP,
         for (a, action) in enumerate(𝒟.A)
             λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "$(action.value).csv"))
-            X, Y = split_data(D[string(action.value)])
-            fm = @formula(y ~ x1 + x2 + x3 + x4)
-            # logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCoding()))
-            # logit = lm(fm, hcat(X, Y))
-            logit = glm(fm, hcat(X, Y), Binomial(), LogitLink())
+            try
+                X, Y = split_data(D[string(action.value)])
+                fm = @formula(y ~ x1 + x2 + x3 + x4)
+                logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCoding()))
+                # logit = lm(fm, hcat(X, Y))
+                # logit = glm(fm, hcat(X, Y), Binomial(), LogitLink())
+            catch
+                λ[s][a][1] = Dict(σ => 0.5 for σ in Σ)
+            end
             for l in [1]
                 λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
@@ -242,7 +271,11 @@ function generate_feedback_profile(𝒟::DomainSSP,
                     if f[1] == -1
                         p = 0.5
                     else
-                        p = clamp(predict(logit, q)[1], 0.0, 1.0)
+                        try
+                            p = clamp(predict(logit, q)[1], 0.0, 1.0)
+                        catch
+                            p = 0.5
+                        end
                     end
                     if σ == '∅'
                         λ[s][a][l][σ] = p
@@ -267,8 +300,8 @@ function update_feedback_profile!(C)
             # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "$(action.value).csv"))
             X, Y = split_data(D[string(action.value)])
             fm = @formula(y ~ x1 + x2 + x3 + x4)
-            # logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCoding()))
-            logit = glm(fm, hcat(X, Y), Binomial(), LogitLink())
+            logit = lm(fm, hcat(X, Y), contrasts= Dict(:x1 => DummyCoding(), :x2 => DummyCoding()))
+            # logit = glm(fm, hcat(X, Y), Binomial(), LogitLink())
             for l in [1]
                 for σ ∈ Σ
                     # if action != :edge
@@ -306,7 +339,7 @@ function save_data(D)
 end
 
 function human_cost(action::CASaction)
-    return [10.0 1.0 0.0][action.l+1]
+    return [5.0 0.5 0.0][action.l+1]
 end
 ##
 
@@ -607,7 +640,8 @@ end
 function debug_competence(C, L)
     κ, λ, D = C.𝒮.A.κ, C.𝒮.F.λ, C.𝒮.D
     total, lo = 0,0
-    for (s, state) in enumerate(C.S)
+    for s in reachable(C, L)
+        state = C.S[s]
         if terminal(C, state) || state.state.position == -1
             continue
         end
@@ -630,6 +664,12 @@ function debug_competence(C, L)
             println("Lambda: $(λ[ds][da])")
             println("-----------------------")
         else
+            println("-----------------------")
+            println("State:  $state      $s |       Action: $action         $a")
+            println("Competence: $(competence(state.state, action.action))")
+            println("Kappa: $(κ[ds][da])")
+            println("Lambda: $(λ[ds][da])")
+            println("-----------------------")
             lo += 1
         end
     end

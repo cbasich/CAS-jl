@@ -1,5 +1,4 @@
 import Combinatorics
-
 import Base: GLOBAL_RNG, isslotfilled, rand
 function rand(r, s::Set)
     isempty(s) && throw(ArgumentError("set must be non-empty"))
@@ -16,6 +15,7 @@ using GLM
 using DataFrames
 using CSV
 using JLD
+using StatsBase
 
 include("domain_model.jl")
 include("../LAOStarSolver.jl")
@@ -74,7 +74,7 @@ function update_potential(C, ℒ, s, a, L)
     state = CASstate(C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
     X = [lookahead(ℒ, s2, ((a - 1) * 4 + l + 1) ) for l ∈ L]
-    P = .75 .* softmax(-1.0 .* X)
+    P = softmax(-1.0 .* X)
     for l=1:size(L)[1]
         C.potential[s][a][L[l]+1] += P[l]
     end
@@ -86,46 +86,81 @@ function update_autonomy_profile!(C, ℒ)
     for (s, state) in enumerate(C.𝒮.D.S)
         # solve(ℒ, C, s)
         for (a, action) in enumerate(C.𝒮.D.A)
-            if κ[s][a] == 3 || κ[s][a] == 0
+            # if κ[s][a] == 3 || κ[s][a] == 0
+            #     continue
+            # end
+            if κ[s][a] == competence(state, action)
                 continue
             end
             if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
                 continue
             end
 
-            L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
+            if κ[s][a] == 0
+                L = [0,1]
+            elseif κ[s][a] == 3
+                L = [2,3]
+            else
+                L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
+            end
             update_potential(C, ℒ, s, a, L)
 
-            # r = rand()
-            # t = 0.0
-            for i in sortperm(-[C.potential[s][a][l+1] for l in L])
-                # t +=
-                if rand() <= C.potential[s][a][L[i]+1]
-                    if L[i] == 3
-                        if C.𝒮.F.λ[s][a][2]['∅'] < 0.85
-                            C.potential[s][a][L[i] + 1] = 0.0
-                            break
-                        end
-                    elseif L[i] == 0
-                        if C.𝒮.F.λ[s][a][1]['⊕'] > 0.35
-                            C.potential[s][a][L[i] + 1] = 0.0
-                            break
-                        end
-                    elseif L[i] == κ[s][a]
-                        C.potential[s][a][L[i] + 1] = 0.0
-                        break
-                    end
-                    if L[i] == competence(state, action)
-                        println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
-                    end
-                    C.𝒮.A.κ[s][a] = L[i]
+            distr = softmax([C.potential[s][a][l+1] for l in L])
+            i = sample(aweights(distr))
+            if L[i] == 3
+                if C.𝒮.F.λ[s][a][2]['∅'] < 0.65
                     C.potential[s][a][L[i] + 1] = 0.0
-                    if L[2] == 1 && L[i] == 2
-                        C.flags[s][a] = true
-                    end
-                    break
+                    continue
                 end
+            elseif L[i] == 0
+                if C.𝒮.F.λ[s][a][1]['⊕'] > 0.35
+                    C.potential[s][a][L[i] + 1] = 0.0
+                    continue
+                end
+            elseif L[i] == κ[s][a]
+                C.potential[s][a][L[i] + 1] = 0.0
+                continue
             end
+
+            if L[i] == competence(state, action)
+                println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
+            end
+
+            C.𝒮.A.κ[s][a] = L[i]
+            C.potential[s][a][L[i] + 1] = 0.0
+            if L[2] == 1 && L[i] == 2
+                C.flags[s][a] = true
+            end
+
+            # for i in sortperm(-distr)
+            #     t += distr[i]
+            #
+            #     if rand() <= C.potential[s][a][L[i]+1]
+            #         if L[i] == 3
+            #             if C.𝒮.F.λ[s][a][2]['∅'] < 0.65
+            #                 C.potential[s][a][L[i] + 1] = 0.0
+            #                 break
+            #             end
+            #         elseif L[i] == 0
+            #             if C.𝒮.F.λ[s][a][1]['⊕'] > 0.35
+            #                 C.potential[s][a][L[i] + 1] = 0.0
+            #                 break
+            #             end
+            #         elseif L[i] == κ[s][a]
+            #             C.potential[s][a][L[i] + 1] = 0.0
+            #             break
+            #         end
+            #         if L[i] == competence(state, action)
+            #             println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
+            #         end
+            #         C.𝒮.A.κ[s][a] = L[i]
+            #         C.potential[s][a][L[i] + 1] = 0.0
+            #         if L[2] == 1 && L[i] == 2
+            #             C.flags[s][a] = true
+            #         end
+            #         break
+            #     end
+            # end
         end
     end
 end
@@ -179,11 +214,10 @@ function autonomy_cost(state::CASstate)
     elseif state.σ == '⊖'
         return 1.0
     elseif state.σ == '⊘'
-        return 3.0
+        return 3.5
     end
 end
 ##
-
 
 ##
 struct FeedbackModel
@@ -210,6 +244,7 @@ function generate_feedback_profile(𝒟::DomainSSP,
         f = get_state_features(state)
         λ[s] = Dict{Int, Dict{Int, Dict{Char, Float64}}}()
         for (a, action) in enumerate(𝒟.A)
+            λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             if typeof(state) == NodeState
                 # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
                 X, Y = split_data(D["node"][string(action.value)])
@@ -224,7 +259,7 @@ function generate_feedback_profile(𝒟::DomainSSP,
                 fm = @formula(y ~ x1 + x2 + x3)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x2 => DummyCoding()))
             end
-            λ[s][a] = Dict{Int, Dict{Char, Float64}}()
+
             for l in [1,2]
                 λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
@@ -246,7 +281,6 @@ function update_feedback_profile!(C)
     λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
     for (s, state) in enumerate(𝒟.S)
         f = get_state_features(state)
-        λ[s] = Dict{Int, Dict{Int, Dict{Char, Float64}}}()
         for (a, action) in enumerate(𝒟.A)
             if typeof(state) == NodeState
                 # X, Y = read_data(joinpath(abspath(@__DIR__), "data", "node_$(action.value).csv"))
@@ -262,15 +296,10 @@ function update_feedback_profile!(C)
                 fm = @formula(y ~ x1 + x2 + x3)
                 logit = lm(fm, hcat(X, Y), contrasts= Dict(:x2 => DummyCoding()))
             end
-
-            λ[s][a] = Dict{Int, Dict{Char, Float64}}()
             for l in [1,2]
-                λ[s][a][l] = Dict{Char, Float64}()
                 for σ ∈ Σ
-
                     q = DataFrame(hcat(f, l), :auto)
                     p = clamp(predict(logit, q)[1], 0.0, 1.0)
-
                     if σ == '⊕' || σ == '∅'
                         λ[s][a][l][σ] = p
                     else
@@ -300,7 +329,7 @@ function save_data(D)
 end
 
 function human_cost(action::CASaction)
-    return [3. 1. .5 0.][action.l + 1]              #TODO: Fix this.
+    return [5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
 end
 ##
 
@@ -646,7 +675,7 @@ function build_cas(𝒟::DomainSSP,
 end
 
 function solve_model(C::CASSP)
-    ℒ = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
+    ℒ = LRTDPsolver(C, 10000., 1000, .001, Dict{Int, Int}(),
                      false, Set{Int}(), zeros(length(C.S)),
                                         zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])
@@ -692,7 +721,7 @@ function get_route(M, C, L)
         s = C.SIndex[state]
         # a = L.π[s]
         a = solve(L, C, s)[1]
-        println(state,  "     |     ", C.A[a])
+        # println(state,  "     |     ", C.A[a])
         state = generate_successor(M, state, C.A[a], '∅')
         # sp = C.T[s][a][1][1]
         # state = C.S[sp]

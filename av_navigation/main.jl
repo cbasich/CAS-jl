@@ -26,6 +26,9 @@ function simulate(M::DomainSSP, C::CASSP, L, m)
             episode_cost += C.C(C, C.SIndex[CASstate(state, σ)], C.AIndex[CASaction(action, 2)])
 
             if σ == '⊘'
+                if i == m
+                    signal_count += 1
+                end
                 state = M.S[M.T[s][a][1][1]]
             else
                 state = M.S[generate_successor(M, s, a)]
@@ -68,7 +71,7 @@ function simulate(M::CASSP, L, m)
             action = A[a]
             actions_taken += 1
             actions_at_competence += (action.l == competence(state.state, action.action))
-            # println("$i   |   Taking action $action in state $state.")
+            println("$i   |   Taking action $action in state $state.")
             if action.l == 0 || action.l == 3
                 σ = '∅'
             elseif action.l == 1
@@ -111,12 +114,12 @@ function simulate(M::CASSP, L, m)
                 state = CASstate(state.state, '⊖')
                 # M.s₀ = state
                 # L = solve_model(M)
+                delete!(L.solved, s)
                 continue
             end
             if action.l == 0 || σ == '⊘'
                 state = M.S[M.T[s][a][1][1]]
             else
-                println(state, action)
                 state = generate_successor(M.𝒮.D, state, action, σ)
             end
             # println(σ, "     | succ state |      ", state)
@@ -148,8 +151,9 @@ function run_episodes(M, C)
     lo_function_of_signal_count2 = Vector{Tuple{Int, Float64}}()
     route_records = Dict{Int, Dict{String, Any}}()
     total_signals_received, total_signals_received2 = 0, 0
+    expected_task_costs = Vector{Float64}()
 
-    for i=1:500
+    for i=1:1000
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         set_route(M, C, init, goal)
@@ -159,11 +163,12 @@ function run_episodes(M, C)
         # end
 
         println(i, "  |  Task: ", route)
-        @time ℒ = solve_model(C)
-        @time L2 = solve_model(M)
-        @time c, std, signal_count, percent_lo, error = simulate(C, ℒ, 100)
-        @time c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, L2, 100)
+        ℒ = solve_model(C)
+        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 10)
         total_signals_received += signal_count
+
+        ℒ2 = solve_model(M)
+        c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, ℒ2, 10)
         total_signals_received2 += signal_count2
 
         # Per episode record keeping.
@@ -180,7 +185,7 @@ function run_episodes(M, C)
         push!(lo_function_of_signal_count2, (total_signals_received2, percent_lo2))
 
         # Per 10 episode record keeping (high compute).
-        if i == 1 || i%50 == 0
+        if i == 1 || i%10 == 0
             lo, lo_r = compute_level_optimality(C, ℒ)
             push!(los, lo)
             push!(los_r, lo_r)
@@ -191,28 +196,30 @@ function run_episodes(M, C)
             set_route(M, C, 12, 7)
             generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
             L = solve_model(C)
+            push!(expected_task_costs, L.V[C.SIndex[C.s₀]])
             L2 = solve_model(M)
-            c, std, signal_count, percent_lo, error = simulate(C, ℒ, 100)
-            c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, L2, 100)
+            c, std, signal_count, percent_lo, error = simulate(C, L, 10)
+            c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, L2, 10)
             push!(fixed_task_costs, c)
             push!(fixed_task_costs2, c2)
         end
-        # if i ==1 || i%100 == 0
-        #     route_records[i] = Dict{String, Any}()
-        #     for k in keys(fixed_routes)
-        #         if !haskey(route_records[i], k)
-        #             route_records[i][k] = Dict()
-        #         end
-        #         init, goal = fixed_routes[k]
-        #         println("Getting route: $init --> $goal")
-        #         set_route(M, C, init, goal)
-        #         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-        #         L = solve_model(C)
-        #         route = get_route(M, C, L)
-        #         route_records[i][k]["route"] = route
-        #         route_records[i][k]["expected cost"] = L.V[C.SIndex[C.s₀]]
-        #     end
-        # end
+
+        if i ==1 || i%100 == 0
+            route_records[i] = Dict{String, Any}()
+            for k in keys(fixed_routes)
+                if !haskey(route_records[i], k)
+                    route_records[i][k] = Dict()
+                end
+                init, goal = fixed_routes[k]
+                println("Getting route: $init --> $goal")
+                set_route(M, C, init, goal)
+                generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+                L = solve_model(C)
+                route = get_route(M, C, L)
+                route_records[i][k]["route"] = route
+                route_records[i][k]["expected cost"] = L.V[C.SIndex[C.s₀]]
+            end
+        end
 
         # Update model
         update_feedback_profile!(C)
@@ -220,21 +227,21 @@ function run_episodes(M, C)
         save_data(C.𝒮.F.D)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 
-        results = [costs, costs2, stds, stds2, cost_errors, cost_errors2, los, los_r, lo_function_of_signal_count, lo_function_of_signal_count2, signal_counts, signal_counts2, fixed_task_costs, fixed_task_costs2, route_records]
+        results = [costs, costs2, stds, stds2, expected_task_costs, cost_errors, cost_errors2, los, los_r, lo_function_of_signal_count, lo_function_of_signal_count2, signal_counts, signal_counts2, fixed_task_costs, fixed_task_costs2, route_records]
 
-        save(joinpath(abspath(@__DIR__), "results.jld"), "results", results)
+        save(joinpath(abspath(@__DIR__), "results.jld"), "results95", results)
 
         x = signal_counts
         g = scatter(signal_counts_per_10, [los los_r], xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable"])
         savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
 
-        g2 = scatter(x, [cost_errors cost_errors2], xlabel="Signals Received", ylabel="%Error")
+        g2 = scatter(x, [cost_errors cost_errors2], xlabel="Signals Received", ylabel="%Error", label = ["CAS" "No CAS"])
         savefig(g2, joinpath(abspath(@__DIR__), "plots", "percent_error.png"))
 
-        g3 = scatter(x, [stds stds2], xlabel="Signals Received", ylabel="Reliability")
+        g3 = scatter(x, [stds stds2], xlabel="Signals Received", ylabel="Reliability", label = ["CAS" "No CAS"])
         savefig(g3, joinpath(abspath(@__DIR__), "plots", "standard_devs.png"))
 
-        g4 = scatter(signal_counts_per_10, [fixed_task_costs fixed_task_costs2], xlabel="Episode", ylabel="Expected Cost to Goal")
+        g4 = scatter(signal_counts_per_10, [fixed_task_costs fixed_task_costs2], xlabel="Episode", ylabel="Average Cost to Goal", label = ["CAS" "No CAS"])
         savefig(g4, joinpath(abspath(@__DIR__), "plots", "fixed_task_costs.png"))
     end
     save_autonomy_profile(C.𝒮.A.κ)
@@ -246,7 +253,7 @@ function run_episodes(M, C)
     println(los_r)
     println(lo_function_of_signal_count)
     println(signal_counts)
-    println(expected_task_costs)
+    println(fixed_task_costs)
 
     return results
 end
@@ -299,7 +306,7 @@ for i=2:length(override_rate_records)
 end
 override_rates = Dict(k => (v[2]/v[1]) for (k,v) in total_overrides if (v[1] > 50 && v[2] > 0))
 
-results = load(joinpath(abspath(@__DIR__), "results2.jld"), "results2")
+results = load(joinpath(abspath(@__DIR__), "results.jld"), "results2")
 results2 = load(joinpath(abspath(@__DIR__), "results3.jld"), "results3")
 los = cat(results[7], results2[7], dims=1)[1:130]
 los_r = cat(results[8], results2[8], dims=1)[1:130]

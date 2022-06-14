@@ -1,7 +1,9 @@
 using CSV
 using DataFrames
-using Flux
+# using Flux
 # using GLM
+
+softmax(x; dims=1) = exp.(x) ./ sum(exp.(x), dims=dims)
 
 function record_data(data, filepath, append=true)
     CSV.write(filepath, DataFrame(data, :auto), append=append, header=false)
@@ -10,7 +12,12 @@ function record_data(data::DataFrame, filepath, append=false)
     CSV.write(filepath, data, append=append, header=false)
 end
 function record_data!(data, df)
-    push!(df, data)
+    try
+        push!(df, data)
+    catch
+        println(df)
+        println(data)
+    end
 end
 
 function init_pass_obstacle_data(filepath)
@@ -33,32 +40,32 @@ function init_pass_obstacle_data(filepath)
 end
 
 function init_node_data(filepath)
-    d = [:x1 :x2 :x3 :x4 :y]
-    for p in 0:1
-        for o in 0:1
-            for v in 0:4
-                for l in 1:2
-                    for y in 0:1
-                        d = vcat(d, [p o v l y])
-                    end
-                end
-            end
-        end
-    end
+    d = [:x1 :x2 :x3 :x4 :y; 1 1 1 1 1]
+    # for p in 0:1
+    #     for o in 0:1
+    #         for v in 0:4
+    #             for l in 1:2
+    #                 for y in 0:1
+    #                     d = vcat(d, [p o v l y])
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
     record_data(d,filepath,false)
 end
 
 function init_edge_data(filepath)
-    d = [:x1 :x2 :x3 :y]
-    for o in 0:1
-        for n in 1:3
-            for l in 1:2
-                for y in 0:1
-                    d = vcat(d, [o n l y])
-                end
-            end
-        end
-    end
+    d = [:x1 :x2 :x3 :y; 1 1 1 1]
+    # for o in 0:1
+    #     for n in 1:3
+    #         for l in 1:2
+    #             for y in 0:1
+    #                 d = vcat(d, [o n l y])
+    #             end
+    #         end
+    #     end
+    # end
     record_data(d, filepath, false)
 end
 
