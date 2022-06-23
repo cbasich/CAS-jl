@@ -41,8 +41,6 @@ function Base.hash(a::DomainAction, h::UInt)
 end
 
 struct DomainSSP
-    F_active
-    F_inactive
     S
     A
     T
@@ -52,9 +50,7 @@ struct DomainSSP
     SIndex
     AIndex
 end
-function DomainSSP(F_active::Vector{},
-                   F_inactive::Vector{}
-                   S::Vector{DomainState},
+function DomainSSP(S::Vector{DomainState},
                    A::Vector{DomainAction},
                    T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
                    C::Function,
