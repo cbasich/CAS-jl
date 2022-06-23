@@ -105,11 +105,11 @@ function generate_states(grid::Vector{Vector{Any}},
                 if loc == '.'
                     push!(S, DomainState(i, j, θ, '∅'))
                 elseif loc == 'C'
-                    for o in ['E', 'L', 'B']
+                    for o in [:empty, :light, :busy]
                         push!(S, DomainState(i, j, θ, o))
                     end
                 elseif loc == 'D'
-                    for o in ['C', 'O']
+                    for o in [:small, :medium, :large, :open]
                         push!(S, DomainState(i, j, θ, o))
                     end
                 else
