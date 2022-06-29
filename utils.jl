@@ -1,27 +1,29 @@
 using CSV
 using DataFrames
+using FeatureSelectors
 # using Flux
 # using GLM
 
 softmax(x; dims=1) = exp.(x) ./ sum(exp.(x), dims=dims)
 
 function record_data(data, filepath, append=true)
-    CSV.write(filepath, DataFrame(data, :auto), append=append, header=false)
+    CSV.write(filepath, DataFrame(data), false)
 end
 function record_data(data::DataFrame, filepath, append=false)
-    CSV.write(filepath, data, append=append, header=true)
+    CSV.write(filepath, data, append=append)
 end
 function record_data!(data, df)
-    try
-        push!(df, data)
-    catch
-        println(df)
-        println(data)
-    end
+    df = push!(copy(df), data)
+    # catch
+    #     # println(df)
+    #     println(data)
+    # end
+    return df
 end
 
 function init_pass_obstacle_data(filepath)
-    data = [:position :oncoming :priority :σ]
+    data = DataFrame(position=Int[], oncoming=Int[], priority=Bool[], σ=Bool[])
+    # push!(data, [4 0 true true])
     for pos in 0:4
         for o in -1:3
             if pos < 1 && o != -1
@@ -29,7 +31,8 @@ function init_pass_obstacle_data(filepath)
             end
             for p in 0:1
                 for y in 0:1
-                    data = vcat(data, [pos o p y])
+                    push!(data, [pos o p y])
+                    # data = vcat(data, [pos o p y])
                 end
             end
         end
@@ -67,9 +70,9 @@ function init_edge_data(filepath)
     record_data(d, filepath, false)
 end
 
-function update_data(C, action)
-    D, D_full = C.𝒮.F.D[string(action.value)], C.𝒮.F.D_full[string(action.value)]
-    D = D_full[!, C.𝒮.D.F_active]
+function update_data!(C, action)
+    # D, D_full = C.𝒮.F.D[string(action.value)], C.𝒮.F.D_full[string(action.value)]
+    C.𝒮.F.D[string(action.value)] = C.𝒮.F.D_full[string(action.value)][!, vec(hcat(C.𝒮.D.F_active, :σ))]
 end
 
 function read_data(filepath)
@@ -103,6 +106,10 @@ function mcc(y1, y2)
     FP = sum(y2) - TP
     FN = length(y2) - (TP + TN + FP)
 
-    mcc = (TP * TN - FP * FN) / sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN))
+    denom = sqrt((TP + FP)*(TP + FN)*(TN + FP)*(TN + FN))
+    if denom == 0.
+        denom = 1
+    end
+    mcc = (TP * TN - FP * FN) / denom
     return mcc
 end

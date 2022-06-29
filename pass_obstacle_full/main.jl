@@ -69,19 +69,20 @@ function simulate(M::CASSP, L, m)
             # a = L.π[s]
             action = A[a]
             actions_taken += 1
-            actions_at_competence += (action.l == competence(state.state, action.action))
+            actions_at_competence += (action.l == competence(state.state, M.𝒮.W, action.action))
             # println("$i   |   Taking action $action in state $state.")
+            # println((action.l == competence(state.state, M.𝒮.W, action.action)))
             if action.l == 0 || action.l == 2
                 σ = '∅'
             else
-                σ = generate_feedback(state.state, action.action)
+                σ = generate_feedback(state.state, M.𝒮.W, action.action)
                 if i == m
                     y = (σ == '∅')
-                    d = hcat(get_state_features(state.state), y)
-                    record_data!(d, M.𝒮.F.D[string(action.action.value)])
+                    d = hcat(get_state_features(M, state.state), y)
+                    M.𝒮.F.D[string(action.action.value)] = record_data!(d, M.𝒮.F.D[string(action.action.value)])
 
-                    d_full = hcat(get_full_state_features(state.state), y)
-                    record_data!(d_full, M.𝒮.F.D_full[string(action.action.value)])
+                    d_full = hcat(get_full_state_features(M, state.state), y)
+                    M.𝒮.F.D_full[string(action.action.value)] = record_data!(d_full, M.𝒮.F.D_full[string(action.action.value)])
                 end
             end
             # println("received feedback: $σ")
@@ -93,8 +94,10 @@ function simulate(M::CASSP, L, m)
                 end
             end
             episode_cost += C(M, s, a)
-            if action.l == 0 || σ == '⊘'
-                state = M.S[M.T[s][a][1][1]]
+            if action.l == 0
+                state = CASstate(DomainState(4, 0, 0, state.state.ISR), '∅')
+            elseif σ == '⊘'
+                state = CASstate(DomainState(4, 0, 0, state.state.ISR), '⊘')
             else
                 state = generate_successor(M.𝒮.D, state, action, σ)
             end
@@ -129,8 +132,13 @@ function run_episodes(M, C, L)
     results = []
     for i=1:500
         println(i)
+        set_random_world_state!(C.𝒮.W)
+        M.s₀ = DomainState(0, -1, false, Tuple([getproperty(C.𝒮.W, f)
+                           for f in M.F_active if hasproperty(C.𝒮.W, f)]))
+        C.s₀ = CASstate(M.s₀, '∅')
+        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
         ℒ = solve_model(C)
-        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 1000)
+        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 100)
         total_signals_received += signal_count
 
         # Per episode record keeping.
@@ -152,35 +160,58 @@ function run_episodes(M, C, L)
             # for (a, data) in C.𝒮.F.D
             #     record_data(data,joinpath(abspath(@__DIR__), "data", "$a.csv"), false)
             # end
-            candidates = find_candidates(C)
-            sampl
+            # if i != 1
+            #     if !isempty(M.F_inactive)
+            #         candidates = find_candidates(C)
+            #         if !isempty(candidates)
+            #             candidate = sample(candidates)
+            #             discriminator = get_discriminator(C, candidate, 3)
+            #             if discriminator != -1
+            #                 update_features!(M, discriminator)
+            #                 for action in M.A
+            #                     update_data!(C, action)
+            #                 end
+            #                 save_data(C.𝒮.F.D)
+            #                 save_full_data(C.𝒮.F.D_full)
+            #
+            #                 # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
+            #                 # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
+            #                 build_model!(M, C.𝒮.W)
+            #                 build_cas!(C)
+            #             end
+            #         end
+            #     end
+            # end
         end
 
         # Update model
         # println("Updating Model.")
         update_feedback_profile!(C)
         update_autonomy_profile!(C, ℒ)
-        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 
-        results = [costs, stds, cost_errors, los, lo_function_of_signal_count, signal_counts, expected_task_costs]
+
+        results = [costs, stds, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, expected_task_costs]
         save(joinpath(abspath(@__DIR__), "results.jld"), "results", results)
 
         x = signal_counts
 
-        g = scatter(signal_counts_per_10, [los los_r], xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable"])
+        los_a = [x[2] for x in lo_function_of_signal_count]
+        los_a = append!([los_a[1]], los_a[10:10:end])
+
+        g = scatter(signal_counts_per_10, [los los_a los_r], xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited" "Reachable"])
         savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
         #
         g2 = scatter(x, cost_errors, xlabel="Signals Received", ylabel="%Error")
         savefig(g2, joinpath(abspath(@__DIR__), "plots", "percent_error.png"))
 
         g3 = scatter(x, stds, xlabel="Signals Received", ylabel="Reliability")
-        savefig(g3, joinpath(abspath(@__DIR__), "plots", "percent_error.png"))
+        savefig(g3, joinpath(abspath(@__DIR__), "plots", "reliability.png"))
 
-        g4 = scatter(x, costs, xlabel="Episode", ylabel="Cost to Goal")
+        g4 = scatter(x, costs, xlabel="Signals Received", ylabel="Cost to Goal")
         savefig(g4, joinpath(abspath(@__DIR__), "plots", "task_cost.png"))
     end
     save_data(C.𝒮.F.D)
-    save_data(C.𝒮.F.D_full)
+    save_full_data(C.𝒮.F.D_full)
     save_autonomy_profile(C.𝒮.A.κ)
     save(joinpath(abspath(@__DIR__), "override_records.jld"), "override_records", override_rate_records)
 
@@ -195,15 +226,19 @@ function run_episodes(M, C, L)
     return results
 end
 
-M = build_model()
+W = get_random_world_state()
+M = build_model(W)
 init_data(M)
-C = build_cas(M, [0,1,2], ['∅', '⊘'])
+C = build_cas(M, W, [0,1,2], ['∅', '⊘'])
 L = solve_model(C)
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
 results = run_episodes(M, C, L)
 
-results = load(joinpath(abspath(@__DIR__), "results.jld"), "results")
+results = load(joinpath(abspath(@__DIR__), "person_untrusting", "ISR", "results.jld"), "results")
+results2 = load(joinpath(abspath(@__DIR__), "person_untrusting", "normal", "results.jld"), "results")
 
-savefig(scatter(results[6][1:250], results[1][1:250], xlabel="Signals Received", ylabel="Task Cost", legend=false), joinpath(abspath(@__DIR__), "plots", "task_cost.png"))
-scatter(results[6][1:250], results[2][1:250])
-results[1]
+ISR_los_active = [x[2] for x in results[5][1:10:100]]
+norm_los_active = [x[2] for x in results2[5][1:10:500]]
+
+scatter([ISR_los_active norm_los_active results[4][1:50] results2[4][1:50]])
+scatter([results[4] results2[4]])

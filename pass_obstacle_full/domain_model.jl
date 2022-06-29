@@ -1,30 +1,74 @@
 using Combinatorics
 using Statistics
 using Random
+using DataStructures
 import Base.==
 
 include("../LAOStarSolver.jl")
 
+##
+##
+
+WorldFeatures = OrderedDict{Symbol, Any}(
+    :trailing => [false, true],
+    :waiting => [false, true],
+    :time => ["day", "night"],
+    :weather => ["snowy", "rainy", "sunny"]
+)
+
+mutable struct WorldState
+    trailing::Bool
+    waiting::Bool
+    time::String
+    weather::String
+end
+function WorldState(T)
+    return WorldState(T[1], T[2], T[3], T[4])
+end
+
+WorldStates = [WorldState(T) for T in vec(collect(Base.product(values(WorldFeatures)...)))]
+
+function set_world_state!(W1, W2)
+    W1.trailing = W2.trailing
+    W1.time = W2.time
+    W1.weather = W2.weather
+    W1.waiting = W2.waiting
+end
+
+function set_random_world_state!(W1)
+    W.trailing = sample([false true], aweights([0.7, 0.3]))
+    W.time = sample(["night" "day"], aweights([0.7 0.3]))
+    W.weather = sample(["sunny" "rainy" "snowy"], aweights([0.85, 0.1, 0.05]))
+    W.waiting = sample([false true], aweights([0.7, 0.3]))
+end
+
+function get_random_world_state()
+    return WorldState(sample([false true]), sample([false true]),
+                      sample(["night" "day"]), sample(["sunny" "rainy" "snowy"]))
+end
+
+##
+##
+
 struct DomainState
     position::Int
     oncoming::Int
-    trailing::Bool
-    dynamic::Bool
     priority::Bool
+    ISR::Tuple
 end
 
 function ==(a::DomainState, b::DomainState)
     return (isequal(a.position, b.position)
-            && isequal(a.oncoming, b.oncoming) && isequal(a.trailing, b.trailing)
-            && isequal(a.dynamic, b.dynamic) && isequal(a.priority, b.priority))
+            && isequal(a.oncoming, b.oncoming)
+            && isequal(a.priority, b.priority)
+            && isequal(a.ISR, b.ISR))
 end
 
 function Base.hash(a::DomainState, h::UInt)
     h = hash(a.position, h)
     h = hash(a.oncoming, h)
-    h = hash(a.trailing, h)
-    h = hash(a.dynamic, h)
     h = hash(a.priority, h)
+    h = hash(a.ISR, h)
     return h
 end
 
@@ -40,7 +84,7 @@ function Base.hash(a::DomainAction, h::UInt)
     return hash(a.value, h)
 end
 
-struct DomainSSP
+mutable struct DomainSSP
     F_active
     F_inactive
     S
@@ -52,8 +96,8 @@ struct DomainSSP
     SIndex
     AIndex
 end
-function DomainSSP(F_active::Vector{},
-                   F_inactive::Vector{},
+function DomainSSP(F_active,
+                   F_inactive,
                    S::Vector{DomainState},
                    A::Vector{DomainAction},
                    T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
@@ -83,30 +127,34 @@ function index(action::DomainAction, M::DomainSSP)
     return M.AIndex[action]
 end
 
-function generate_states()
+function generate_states(F_active)
     S = Vector{DomainState}()
     G = Set{DomainState}()
 
+    F = OrderedDict(k=>WorldFeatures[k] for k in F_active if k in keys(WorldFeatures))
+    # F = OrderedDict(k=>v for (k,v) in WorldFeatures if k in F_active)
+    ISR = vec(collect(Base.product(values(F)...)))
+
     for pos in 0:4
-        for o in -1:3
-            if pos < 1 && o != -1
+        for onc in -1:3
+            if pos < 1 && onc != -1
                 continue
             end
-            for t in [false, true]
-                for d in [false, true]
-                    for p in [false, true]
-                        state = DomainState(pos, o, t, d, p)
-                        push!(S, state)
-                        if pos == 4
-                            push!(G, state)
-                        end
+            for prio in [false, true]
+                for x in ISR
+                    state = DomainState(pos, onc, prio, x)
+                    push!(S, state)
+                    if pos == 4
+                        push!(G, state)
                     end
                 end
             end
         end
     end
 
-    push!(S, DomainState(-1, -1, false, false, false))
+    for x in ISR
+        push!(S, DomainState(-1, -1, false, x))
+    end
     return S, G
 end
 
@@ -136,14 +184,14 @@ function generate_transitions!(M::DomainSSP)
             continue
         end
         if ( 2 <= state.position <= 3) && state.oncoming == 3
-            state′ = DomainState(-1, -1, false, false, false)
+            state′ = DomainState(-1, -1, false, state.ISR)
             for (a, action) in enumerate(A)
                 T[s][a] = [(M.SIndex[state′], 1.0)]
             end
             continue
         end
         if state.position == -1
-            state′ = DomainState(4, 0, false, false, false)
+            state′ = DomainState(4, 0, false, state.ISR)
             for (a, action) in enumerate(A)
                 T[s][a] = [(M.SIndex[state′], 1.0)]
             end
@@ -155,10 +203,13 @@ function generate_transitions!(M::DomainSSP)
             mass = 0.0
             for (sp, state′) in enumerate(S)
                 # Impossibilities
-                if state′.dynamic != state.dynamic
-                    continue
-                end
-                if state.trailing && !state′.trailing
+                # if state′.dynamic != state.dynamic
+                #     continue
+                # end
+                # if state.trailing && !state′.trailing
+                #     continue
+                # end
+                if state.ISR != state′.ISR
                     continue
                 end
                 if action.value == :stop && state.position != state′.position
@@ -189,13 +240,13 @@ function generate_transitions!(M::DomainSSP)
                 p = 1.0
 
                 # Trailing dynamics
-                if state.trailing == state′.trailing == false
-                    p *= 0.8
-                elseif !state.trailing && state′.trailing
-                    p *= 0.2
-                elseif state.trailing == state′.trailing == true
-                    p *= 1.0
-                end
+                # if state.trailing == state′.trailing == false
+                #     p *= 0.8
+                # elseif !state.trailing && state′.trailing
+                #     p *= 0.2
+                # elseif state.trailing == state′.trailing == true
+                #     p *= 1.0
+                # end
 
                 # position dynamics
                 if action.value == :edge
@@ -324,21 +375,37 @@ function check_transition_validity(ℳ::DomainSSP)
     end
 end
 
-function update_features(M, d)
-    push!(M.F_active, pop!(M.F_inactive, d))
+function update_features!(M, d)
+    try
+        M.F_inactive = reshape(deleteat!(vec(M.F_inactive), vec(M.F_inactive) .== d), 1, :)
+        M.F_active = hcat(M.F_active, d)
+    catch
+        println("Error: discriminator == $d")
+    end
+    # push!(M.F_active, pop!(M.F_inactive, d))
 end
 
-function build_model()
-    F_active = [:position :oncoming :priority :σ]
-    F_inactive = []
-    S, goals = generate_states()
-    s₀ = DomainState(0, -1, false, false, false)
+function build_model(W::WorldState,
+                     F_active = [:position :oncoming :priority],
+                     F_inactive = [:trailing :waiting :time :weather])
+    # F_active = [:position :oncoming :priority]
+    # F_inactive = [:trailing :time :weather :waiting]
+    S, goals = generate_states(F_active)
+    s₀ = DomainState(0, -1, false, Tuple([getproperty(W, f) for f in F_active if hasproperty(W, f)]))
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     M = DomainSSP(F_active, F_inactive, S, A, T, generate_costs, s₀, goals)
     generate_transitions!(M)
     check_transition_validity(M)
     return M
+end
+function build_model!(M, W)
+    M.S, M.G = generate_states(M.F_active)
+    M.s₀ = DomainState(0, -1, false, Tuple([getproperty(W, f) for f in M.F_active if hasproperty(W, f)]))
+    M.SIndex, M.AIndex = generate_index_dicts(M.S, M.A)
+    M.T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
+    generate_transitions!(M)
+    check_transition_validity(M)
 end
 
 function solve_model(M::DomainSSP)
