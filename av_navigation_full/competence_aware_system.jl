@@ -19,9 +19,7 @@ using JLD
 using StatsBase
 
 include("domain_model.jl")
-include("../LAOStarSolver.jl")
 include("../utils.jl")
-include("../ValueIterationSolver.jl")
 
 struct CASstate
     state::DomainState
@@ -46,11 +44,12 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            if typeof(state) == EdgeState && action.value == '↑'
-                κ[s][a] = 3
-            else
-                κ[s][a] = 2
-            end
+            κ[s][a] = 2
+            # if typeof(state) == EdgeState && action.value == '↑'
+            #     κ[s][a] = 3
+            # else
+            #     κ[s][a] = 2
+            # end
             # if typeof(state) == NodeState
             #     if action.value == '⤉' || action.value == '↓'
             #         κ[s][a] = 3
@@ -90,31 +89,32 @@ function update_autonomy_profile!(C, ℒ)
             # if κ[s][a] == 3 || κ[s][a] == 0
             #     continue
             # end
-            if κ[s][a] == competence(state, action)
+            if κ[s][a] == 0 || κ[s][a] == 3 #competence(state, action)
                 continue
             end
             if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
                 continue
             end
 
-            if κ[s][a] == 0
-                L = [0,1]
-            elseif κ[s][a] == 3
-                L = [2,3]
-            else
-                L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
-            end
+            # if κ[s][a] == 0
+            #     L = [0,1]
+            # elseif κ[s][a] == 3
+            #     L = [2,3]
+            # else
+            #     L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
+            # end
+            L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
             update_potential(C, ℒ, s, a, L)
 
             distr = softmax([C.potential[s][a][l+1] for l in L])
             i = sample(aweights(distr))
             if L[i] == 3
-                if C.𝒮.F.λ[s][a][2]['∅'] < 0.85
+                if C.𝒮.F.λ[s][a][2]['∅'] < 0.95
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
             elseif L[i] == 0
-                if C.𝒮.F.λ[s][a][1]['⊕'] > 0.25
+                if C.𝒮.F.λ[s][a][1]['⊕'] > 0.05
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
@@ -123,10 +123,10 @@ function update_autonomy_profile!(C, ℒ)
                 continue
             end
 
-            if L[i] == competence(state, action)
-                println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
-            end
-
+            # if L[i] == competence(state, action)
+            #     println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
+            # end
+            println("Updated autonomy profile: ($s, $a) || $(L[i])")
             C.𝒮.A.κ[s][a] = L[i]
             C.potential[s][a][L[i] + 1] = 0.0
             if L[2] == 1 && L[i] == 2
@@ -167,6 +167,7 @@ function update_autonomy_profile!(C, ℒ)
 end
 
 function competence(state::DomainState,
+                   wstate::WorldState,
                    action::DomainAction)
     if typeof(state) == EdgeState
         if state.o && state.l == 1
@@ -226,6 +227,7 @@ mutable struct FeedbackModel
     λ::Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}
     ρ::Function
     D::Dict{String, Dict{String, DataFrame}}
+    D_full::Dict{String, DataFrame}
     ϵ::Float64
 end
 
@@ -233,12 +235,27 @@ function set_consistency(F::FeedbackModel, ϵ)
     F.ϵ = ϵ
 end
 
-function get_state_features(state::DomainState)
+function get_state_features(C, state::DomainState)
     if typeof(state) == NodeState
-        return [state.p state.o state.v]
+        x = [state.p state.o state.v]
     else
-        return [state.o state.l]
+        x = [state.o state.l]
     end
+    w = reshape([f for f in state.ISR], 1, :)
+    if isempty(w)
+        return x
+    else
+        return hcat(x, w)
+    end
+end
+
+function get_full_state_features(C, state::DomainState)
+    if typeof(state) == NodeState
+        x = [state.p state.o state.v]
+    else
+        x = [state.o state.l]
+    end
+    w = reshape([f for f in state.ISR], 1, :)
 end
 
 function generate_feedback_profile(𝒟::DomainSSP,
@@ -250,41 +267,41 @@ function generate_feedback_profile(𝒟::DomainSSP,
                                                     for l=1:2)
                                                     for a=1:length(A))
                                                     for s=1:length(S))
-    for (a, action) in enumerate(A)
-        X_n, Y_n = split_data(D["node"][string(action.value)])
-        # M_n = DecisionTreeClassifier(max_depth=8)
-        M_n = build_forest(Y_n, X_n, 2, 10, 0.5, 8)
-        # DecisionTree.fit!(M_n, X_n, Y_n)
-        if action.value ∈ ['↑', '⤉']
-            X_e, Y_e = split_data(D["edge"][string(action.value)])
-            # M_e = DecisionTreeClassifier(max_depth=8)
-            # DecisionTree.fit!(M_e, X_e, Y_e)
-            M_e = build_forest(Y_e, X_e, 2, 10, 0.5, 8)
-        end
-
-        for (s, state) in enumerate(S)
-            if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-                continue
-            end
-            f = get_state_features(state)
-            for l in [1,2]
-                if typeof(state) == NodeState
-                    # pred = predict_proba(M_n, hcat(f,l))
-                    pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
-                else
-                    # pred = predict_proba(M_e, hcat(f,l))
-                    pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
-                end
-                for σ in Σ
-                    if σ == '⊖' || σ == '⊘'
-                        λ[s][a][l][σ] = pred[1]
-                    else
-                        λ[s][a][l][σ] = pred[2]
-                    end
-                end
-            end
-        end
-    end
+    # for (a, action) in enumerate(A)
+    #     X_n, Y_n = split_data(D["node"][string(action.value)])
+    #     # M_n = DecisionTreeClassifier(max_depth=8)
+    #     M_n = build_forest(Y_n, X_n, 2, 10, 0.5, 8)
+    #     # DecisionTree.fit!(M_n, X_n, Y_n)
+    #     if action.value ∈ ['↑', '⤉']
+    #         X_e, Y_e = split_data(D["edge"][string(action.value)])
+    #         # M_e = DecisionTreeClassifier(max_depth=8)
+    #         # DecisionTree.fit!(M_e, X_e, Y_e)
+    #         M_e = build_forest(Y_e, X_e, 2, 10, 0.5, 8)
+    #     end
+    #
+    #     for (s, state) in enumerate(S)
+    #         if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
+    #             continue
+    #         end
+    #         f = get_state_features(state)
+    #         for l in [1,2]
+    #             if typeof(state) == NodeState
+    #                 # pred = predict_proba(M_n, hcat(f,l))
+    #                 pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
+    #             else
+    #                 # pred = predict_proba(M_e, hcat(f,l))
+    #                 pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
+    #             end
+    #             for σ in Σ
+    #                 if σ == '⊖' || σ == '⊘'
+    #                     λ[s][a][l][σ] = pred[1]
+    #                 else
+    #                     λ[s][a][l][σ] = pred[2]
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
     return λ
 end
 
@@ -293,27 +310,22 @@ function update_feedback_profile!(C)
     S, A = 𝒟.S, 𝒟.A
     for (a, action) in enumerate(A)
         X_n, Y_n = split_data(D["node"][string(action.value)])
-        # M_n = DecisionTreeClassifier(max_depth=8)
-        # DecisionTree.fit!(M_n, X_n, Y_n)
-        M_n = build_forest(Y_n, X_n, 2, 10, 0.5, 8)
+        M_n = build_forest(Y_n, X_n, -1, 10, 0.7, -1)
+        X_e, Y_e, M_e = missing, missing, missing
         if action.value ∈ ['↑', '⤉']
             X_e, Y_e = split_data(D["edge"][string(action.value)])
-            # M_e = DecisionTreeClassifier(max_depth=8)
-            # DecisionTree.fit!(M_e, X_e, Y_e)
-            M_e = build_forest(Y_e, X_e, 2, 10, 0.5, 8)
+            M_e = build_forest(Y_e, X_e, -1, 10, 0.7, -1)
         end
 
         for (s, state) in enumerate(S)
             if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
                 continue
             end
-            f = get_state_features(state)
+            f = get_state_features(C, state)
             for l in [1,2]
                 if typeof(state) == NodeState
-                    # pred = predict_proba(M_n, hcat(f,l))
                     pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
                 else
-                    # pred = predict_proba(M_e, hcat(f,l))
                     pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
                 end
                 for σ in Σ
@@ -422,15 +434,100 @@ function save_data(D)
     end
 end
 
+function save_full_data(D)
+    for k in keys(D["edge"])
+        record_data(D["edge"][k], joinpath(abspath(@__DIR__), "data", "edge_$(k)_full.csv"), false)
+    end
+    for k in keys(D["node"])
+        record_data(D["node"][k], joinpath(abspath(@__DIR__), "data", "node_$(k)_full.csv"), false)
+    end
+end
+
 function human_cost(action::CASaction)
     return [5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
 end
+
+function find_candidates(C, δ=0.05, threshold=7)
+    λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
+    S, A = 𝒟.S, 𝒟.A
+
+    active_features = 𝒟.F_active
+
+    candidates = Vector()
+    for s in keys(λ)
+        if S[s].position == -1
+            continue
+        end
+        state = S[s]
+        f = get_state_features(C, state)
+        for a in keys(λ[s])
+            action = A[a]
+            count = 0
+            try
+                if typeof(state) == NodeState
+                    count = nrow(groupby(D["node"][string(action.value)], vec(active_features))[Tuple(f)])
+                else
+                    count = nrow(groupby(D["edge"][string(action.value)], vec(active_features))[Tuple(f)])
+                end
+            catch
+                count = 0
+            end
+            if count < threshold
+                continue
+            end
+
+            candidate = true
+
+            for σ ∈ Σ
+                if λ[s][a][1][σ] > 1 - δ
+                    candidate = false
+                end
+            end
+
+            if candidate
+                push!(candidates, [state action])
+            end
+        end
+    end
+
+    return candidates
+end
+
+function get_discriminator(C, candidate, k)
+    state, action = candidate[1], candidate[2]
+    λ, 𝒟, Σ, L = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L
+    if typeof(state) == NodeState
+        D =  C.𝒮.F.D["node"][string(action.value)]
+        D_full =  C.𝒮.F.D_full["node"][string(action.value)]
+    else
+            D =  C.𝒮.F.D["edge"][string(action.value)]
+            D_full =  C.𝒮.F.D_full["edge"][string(action.value)]
+        end
+    S, A = 𝒟.S, 𝒟.A
+
+    inactive_features = 𝒟.F_inactive
+    if length(inactive_features) == 0
+        return -1
+    end
+
+    _disc = Dict()
+    for f in inactive_features
+        _disc[f] = mRMR(D_full[!, f], D_full[!, :σ])
+    end
+
+    discriminators = sort(collect(_disc), by = x->x[2])
+    D_train, D_test = split_df(D_full, 0.75)
+    return test_discriminators(C, D, D_full, D_train, D_test, 𝒟.F_active,
+                               discriminators[1:min(k, length(discriminators))])
+end
+
 ##
 
 struct CAS
     D::DomainSSP
     A::AutonomyModel
     F::FeedbackModel
+    W::WorldState
 end
 
 mutable struct CASSP
@@ -713,19 +810,22 @@ function compute_level_optimality(C, ℒ)
     lo_r = 0
     # for s in keys(ℒ.π)
     R = reachable(C, ℒ)
-    for (s, state) in enumerate(C.S)
-        if terminal(C, state)
-            continue
-        end
-        solve(ℒ, C, s)
-        total += 1
-        # state = C.S[s]
-        action = C.A[ℒ.π[s]]
-        comp = (action.l == competence(state.state, action.action))
-        lo += comp
-        if s in R
-            r += 1
-            lo_r += comp
+    for w in WorldStates
+        set_world_state!(C.𝒮.W, w)
+        for (s, state) in enumerate(C.S)
+            if terminal(C, state)
+                continue
+            end
+            solve(ℒ, C, s)
+            total += 1
+            # state = C.S[s]
+            action = C.A[ℒ.π[s]]
+            comp = (action.l == competence(state.state, w, action.action))
+            lo += comp
+            if s in R
+                r += 1
+                lo_r += comp
+            end
         end
     end
     # println("  ")
@@ -736,6 +836,7 @@ function compute_level_optimality(C, ℒ)
 end
 
 function build_cas(𝒟::DomainSSP,
+                  𝒲::WorldState,
                    L::Vector{Int},
                    Σ::Vector{Char})
     if ispath(joinpath(abspath(@__DIR__), "params.jld"))
@@ -767,6 +868,23 @@ function build_cas(𝒟::DomainSSP,
     check_transition_validity(C)
     return C
 end
+function build_cas!(C::CASSP)
+    𝒟, 𝒜, ℱ = C.𝒮.D, C.𝒮.A, C.𝒮.F
+    κ = generate_autonomy_profile(𝒟, 𝒜.L)
+    𝒜.κ = κ
+
+    λ = generate_feedback_profile(𝒟, ℱ.Σ, 𝒜.L, ℱ.D)
+    ℱ.λ = λ
+
+    C.S, C.s₀, C.G = generate_states(𝒟, ℱ)
+    C.SIndex, C.AIndex = generate_index_dicts(C.S, C.A)
+    C.flags = Dict(s => Dict(a => false for a=1:length(𝒟.A)) for s=1:length(𝒟.S))
+    C.potential = Dict(s => Dict(a => [0. for i=1:3] for a=1:length(𝒟.A)) for s=1:length(𝒟.S))
+    C.T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
+    update_feedback_profile!(C)
+    generate_transitions!(𝒟, 𝒜, ℱ, C, C.S, C.A, C.G)
+    check_transition_validity(C)
+end
 
 function solve_model(C::CASSP)
     ℒ = LRTDPsolver(C, 10000., 1000, .001, Dict{Int, Int}(),
@@ -776,9 +894,12 @@ function solve_model(C::CASSP)
     return ℒ
 end
 
-function init_data()
+function init_data(M)
     for action in ["←", "↑", "→", "↓", "⤉"]
         init_node_data(joinpath(abspath(@__DIR__), "data", "node_$action.csv"))
+        CSV.write(joinpath(abspath(@__DIR__), "data", "node_$(action)_full.csv"),
+                  DataFrame([]);
+                  header = vec(hcat(M.F_active, M.F_inactive, :σ)))
     end
 
     init_edge_data(joinpath(abspath(@__DIR__), "data", "edge_↑.csv"))

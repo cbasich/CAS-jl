@@ -19,9 +19,7 @@ using JLD
 using StatsBase
 
 include("domain_model.jl")
-include("../LAOStarSolver.jl")
 include("../utils.jl")
-include("../ValueIterationSolver.jl")
 
 struct CASstate
     state::DomainState

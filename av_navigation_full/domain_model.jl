@@ -5,6 +5,37 @@ using Statistics
 include("maps.jl")
 include("../LAOStarSolver.jl")
 
+##
+##
+
+WorldFeatures = OrderedDict{Symbol, Any}(
+
+)
+
+mutable struct WorldState
+
+end
+function WorldState(T)
+
+end
+
+WorldStates = [WorldState(T) for T in vec(collect(Base.product(values(WorldFeatures)...)))]
+
+function set_world_state!(W1, W2)
+
+end
+
+function set_random_world_state!(W1)
+
+end
+
+function get_random_world_state()
+
+end
+
+##
+##
+
 DIRECTIONS = ['↑', '←', '↓', '→']
 function change_direction(θ1, θ2)
     if θ2 == '←'
@@ -500,6 +531,14 @@ function build_model()
     generate_transitions!(M, graph)
     check_transition_validity(M)
     return M
+end
+function build_model!(M, W)
+    M.S, M.G = generate_states(M.F_active)
+    M.s₀ = DomainState(0, -1, false, Tuple([getproperty(W, f) for f in M.F_active if hasproperty(W, f)]))
+    M.SIndex, M.AIndex = generate_index_dicts(M.S, M.A)
+    M.T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
+    generate_transitions!(M)
+    check_transition_validity(M)
 end
 
 function solve_model(M::DomainSSP)

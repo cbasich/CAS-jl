@@ -113,3 +113,84 @@ function mcc(y1, y2)
     mcc = (TP * TN - FP * FN) / denom
     return mcc
 end
+
+function mRMR(df, y)
+    relevance = 0.
+    if length(unique(df)) == 1
+        return 0
+    elseif typeof(df) == Array{Bool, 1}
+        X = reshape(df, :, 1)
+    else
+        # @show df
+        X = Matrix(one_hot_encode(DataFrame([df]), drop_original=true))
+    end
+    relevance = sum(f_test(X, y)) / size(X)[2]
+
+    repetition = 0.
+    for i = 1:size(X)[2]
+        repetition += sum(pearson_correlation(X, X[:, i])) - 1.0
+    end
+    repetition = repetition / size(X)[2]
+    return relevance / repetition
+end
+
+function build_lambda(D_train, features, discriminator)
+    println("Features: ", features)
+    println("Discriminator: ", discriminator)
+    X = Matrix(D_train[!, vec(hcat(features, discriminator))])
+    # catch
+    #     println("Features: ", features)
+    #     println("Discriminator: ", discriminator)
+    # end
+    Y = D_train[:, :σ]
+    λ = build_forest(Y, X, -1, 10, 0.7, -1)
+    return λ
+end
+
+function test_lambda(λ, D_test, features, discriminator)
+    if discriminator == -1
+        X = Matrix(D_test[!, vec(features)])
+    else
+        X = Matrix(D_test[!, vec(hcat(features, discriminator))])
+    end
+    Y = D_test[!, :σ]
+    preds = apply_forest_proba(λ, X, [0,1])[:, 2] .> 0.5
+    return mcc(Y, preds)
+end
+
+function test_discriminators(C, D, D_full, D_train, D_test, F, discriminators)
+    # lambdas = [build_lambda(D_train, F, d[1]) for d in discriminators]
+    # scores = [test_lambda(lambdas[i], D_test, F, discriminators[i][1]) for i=1:length(lambdas)]
+
+    scores = []
+    for d in discriminators
+        # @show vec(hcat(F, d[1]))
+        X = Matrix(D_full[!, vec(hcat(F, d[1]))])
+        Y = D_test[!, :σ]
+        r2 = nfoldCV_forest(Y, X, 3, -1, 10, 0.7, -1; verbose=false)
+        push!(scores, mean(r2))
+    end
+
+    best = argmax(scores)
+    best_score = scores[best]
+    best_discriminator = discriminators[best][1]
+
+    # X₀, Y₀ = split_data(D)
+    # λ₀ = build_forest(Y₀, Matrix(X₀), -1, 10, 0.7, -1)
+    # curr_score = test_lambda(λ₀, D_full, F, -1)
+
+    X₀, Y₀ = Matrix(D_full[!, vec(F)]), D_full[!, :σ]
+    curr_score = mean(nfoldCV_forest(Y₀, X₀, 3, -1, 10, 0.7, -1; verbose=false))
+    println("Curr score: $curr_score")
+    println("Best score: $best_score")
+    if best_score > curr_score + 0.1
+        return best_discriminator
+    else
+        return -1
+    end
+    # if best_score < curr_score + 0.1 || best_score < 0.5 || curr_score == -1.0
+    #     return -1
+    # else
+    #     return best_discriminator
+    # end
+end
