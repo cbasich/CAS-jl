@@ -219,10 +219,6 @@ function get_full_state_features(C, state::DomainState)
     return hcat(x, w)
 end
 
-function onehot(x)
-    return transpose(vcat(Flux.onehot(x[1], 0:4), Flux.onehot(x[2], -1:3), x[3], x[4]))
-end
-
 function generate_feedback_profile(𝒟::DomainSSP,
                                    Σ::Vector{Char},
                                    L::Vector{Int},

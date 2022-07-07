@@ -160,28 +160,28 @@ function run_episodes(M, C, L)
             # for (a, data) in C.𝒮.F.D
             #     record_data(data,joinpath(abspath(@__DIR__), "data", "$a.csv"), false)
             # end
-            # if i != 1
-            #     if !isempty(M.F_inactive)
-            #         candidates = find_candidates(C)
-            #         if !isempty(candidates)
-            #             candidate = sample(candidates)
-            #             discriminator = get_discriminator(C, candidate, 3)
-            #             if discriminator != -1
-            #                 update_features!(M, discriminator)
-            #                 for action in M.A
-            #                     update_data!(C, action)
-            #                 end
-            #                 save_data(C.𝒮.F.D)
-            #                 save_full_data(C.𝒮.F.D_full)
-            #
-            #                 # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
-            #                 # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
-            #                 build_model!(M, C.𝒮.W)
-            #                 build_cas!(C)
-            #             end
-            #         end
-            #     end
-            # end
+            if i != 1
+                if !isempty(M.F_inactive)
+                    candidates = find_candidates(C)
+                    if !isempty(candidates)
+                        candidate = sample(candidates)
+                        discriminator = get_discriminator(C, candidate, 3)
+                        if discriminator != -1
+                            update_features!(M, discriminator)
+                            for action in M.A
+                                update_data!(C, action)
+                            end
+                            save_data(C.𝒮.F.D)
+                            save_full_data(C.𝒮.F.D_full)
+
+                            # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
+                            # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
+                            build_model!(M, C.𝒮.W)
+                            build_cas!(C)
+                        end
+                    end
+                end
+            end
         end
 
         # Update model

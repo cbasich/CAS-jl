@@ -1,44 +1,3 @@
-function generate_dummy_graph()
-    nodes = Dict(1 => Dict("pedestrian probability" => .5,
-                           "vehicle probabilities" => [.4, .3, .2, .1],
-                           "occlusion probability" => 0.5,
-                           '→' => 2,
-                           '←' => -1,
-                           '↑' => -1,
-                           '↓' => -1),
-                 2 => Dict("pedestrian probability" => .5,
-                            "vehicle probabilities" => [.4, .3, .2, .1],
-                            "occlusion probability" => 0.5,
-                            '→' => -1,
-                            '←' => 1,
-                            '↑' => -1,
-                            '↓' => 3),
-                 3 => Dict("pedestrian probability" => .5,
-                            "vehicle probabilities" => [.4, .3, .2, .1],
-                            "occlusion probability" => 0.5,
-                            '→' => -1,
-                            '←' => -1,
-                            '↑' => 2,
-                            '↓' => -1))
-    edges = Dict(1 => Dict(2 => Dict("length" => 3,
-                                     "direction" => '→',
-                                     "num lanes" => 1,
-                                     "obstruction probability" => 0.5)),
-                 2 => Dict(1 => Dict("length" => 3,
-                                     "direction" => '←',
-                                     "num lanes" => 1,
-                                     "obstruction probability" => 0.5),
-                           3 => Dict("length" => 5,
-                                     "direction" => '↓',
-                                     "num lanes" => 2,
-                                     "obstruction probability" => 0.7)),
-                 3 => Dict(2 => Dict("length" => 5,
-                                     "direction" => '↑',
-                                     "num lanes" => 2,
-                                     "obstruction probability" => 0.1)))
-    G = Graph(nodes, edges)
-end
-
 function generate_ma_graph()
     nodes = Dict{Int, Dict{Any, Any}}(
                  1 => Dict("pedestrian probability" => .05,
@@ -282,3 +241,45 @@ fixed_routes = Dict(
     "Amherst 1 to Sunderland" => (10, 2),
     "Sunderland to Amherst 1" => (2, 11)
 )
+
+
+function generate_dummy_graph()
+    nodes = Dict(1 => Dict("pedestrian probability" => .5,
+                           "vehicle probabilities" => [.4, .3, .2, .1],
+                           "occlusion probability" => 0.5,
+                           '→' => 2,
+                           '←' => -1,
+                           '↑' => -1,
+                           '↓' => -1),
+                 2 => Dict("pedestrian probability" => .5,
+                            "vehicle probabilities" => [.4, .3, .2, .1],
+                            "occlusion probability" => 0.5,
+                            '→' => -1,
+                            '←' => 1,
+                            '↑' => -1,
+                            '↓' => 3),
+                 3 => Dict("pedestrian probability" => .5,
+                            "vehicle probabilities" => [.4, .3, .2, .1],
+                            "occlusion probability" => 0.5,
+                            '→' => -1,
+                            '←' => -1,
+                            '↑' => 2,
+                            '↓' => -1))
+    edges = Dict(1 => Dict(2 => Dict("length" => 3,
+                                     "direction" => '→',
+                                     "num lanes" => 1,
+                                     "obstruction probability" => 0.5)),
+                 2 => Dict(1 => Dict("length" => 3,
+                                     "direction" => '←',
+                                     "num lanes" => 1,
+                                     "obstruction probability" => 0.5),
+                           3 => Dict("length" => 5,
+                                     "direction" => '↓',
+                                     "num lanes" => 2,
+                                     "obstruction probability" => 0.7)),
+                 3 => Dict(2 => Dict("length" => 5,
+                                     "direction" => '↑',
+                                     "num lanes" => 2,
+                                     "obstruction probability" => 0.1)))
+    G = Graph(nodes, edges)
+end

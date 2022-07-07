@@ -1,6 +1,8 @@
-import Base.==
-
+using Combinatorics
 using Statistics
+using Random
+using DataStructures
+import Base.==
 
 include("maps.jl")
 include("../LAOStarSolver.jl")
@@ -8,30 +10,68 @@ include("../LAOStarSolver.jl")
 ##
 ##
 
-WorldFeatures = OrderedDict{Symbol, Any}(
+##TODO: Need to change the 'lanes' feature in world features bc there is a problem
+#       with it doubling up on the lanes feature in the edgestate
 
+WorldFeatures = OrderedDict{Symbol, Any}(
+    :trailing => [false, true],
+    :left_occupied => [false, true],
+    :right_occupied => [false, true],
+    :waiting => [false, true],
+    :lanes => [1, 2, 3],
+    :time => ["day", "night"],
+    :weather => ["snowy", "rainy", "sunny"],
 )
 
 mutable struct WorldState
-
+    trailing::Bool
+    left_occupied::Bool
+    right_occupied::Bool
+    waiting::Bool
+    lanes::Int
+    time::String
+    weather::String
 end
 function WorldState(T)
-
+    return WorldState(T[1], T[2], T[3], T[4], T[5], T[6], T[7])
 end
 
 WorldStates = [WorldState(T) for T in vec(collect(Base.product(values(WorldFeatures)...)))]
 
 function set_world_state!(W1, W2)
-
+    for f in fieldnames(typeof(W1))
+        setfield!(W1, f, getproperty(W2, f))
+    end
 end
 
-function set_random_world_state!(W1)
-
+function initialize_random_start!(W)
+    W.trailing = sample([false true], aweights([0.7, 0.3]))
+    W.left_occupied = false
+    W.right_occupied = false
+    W.waiting = false
+    W.lanes = 2
+    W.time = sample(WorldFeatures[:time], aweights([0.7, 0.3]))
+    W.weather = sample(WorldFeatures[:weather], aweights([0.85, 0.1, 0.05]))
 end
 
 function get_random_world_state()
-
+    trailing = sample([false true], aweights([0.7, 0.3]))
+    left_occupied = false
+    right_occupied = false
+    waiting = false
+    lanes = 2
+    time = sample(WorldFeatures[:time], aweights([0.7, 0.3]))
+    weather = sample(WorldFeatures[:weather], aweights([0.85, 0.1, 0.05]))
+    return WorldState(trailing, left_occupied, right_occupied, waiting, lanes, time, weather)
 end
+
+# function set_random_world_state!(W1)
+#
+# end
+#
+# function get_random_world_state()
+#     return WorldState()
+# end
 
 ##
 ##
@@ -76,37 +116,40 @@ struct Graph
     edges::Dict{Int, Dict{Int, Any}}
 end
 
-struct NodeState
-    id::Int         # Node ID
-    p::Bool         # Boolean existence of pedestrians
-    o::Bool         # Boolean existence of occlusion
-    v::Int          # Number of blocking vehicles
-    θ::Char         # Direction (orientation) of travel
+mutable struct NodeState
+    id::Int       # Node ID
+    p::Bool       # Boolean existence of pedestrians
+    o::Bool       # Boolean existence of occlusion
+    v::Int        # Number of blocking vehicles
+    θ::Char       # Direction (orientation) of travel
+    ISR::Tuple    # Additional features
 end
-function NodeState()
-    return NodeState(-1, false, false, 0, '↑')
-end
+# function NodeState()
+#     return NodeState(-1, false, false, 0, '↑')
+# end
 
-struct EdgeState
-    u::Int          # Node ID of edge origin
-    v::Int          # Node ID of edge destination
-    θ::Char         # Direction (orientation) of travel
-    o::Bool         # Boolean existence of obstruction in road
-    l::Int          # Number of lanes on road
+mutable struct EdgeState
+    u::Int        # Node ID of edge origin
+    v::Int        # Node ID of edge destination
+    θ::Char       # Direction (orientation) of travel
+    o::Bool       # Boolean existence of obstruction in road
+    l::Int        # Number of lanes on road
+    ISR::Tuple    # Additional features
 end
-function EdgeState()
-    return EdgeState(false, -1, -1)
-end
+# function EdgeState()
+#     return EdgeState(false, -1, -1)
+# end
 
 DomainState = Union{NodeState, EdgeState}
 
 function ==(a::NodeState, b::NodeState)
-    return (isequal(a.id, b.id) && isequal(a.p, b.p) && isequal(a.o, b.o) &&
-            isequal(a.v, b.v) && isequal(a.θ, b.θ))
+    return (isequal(a.id, b.id) &&
+            isequal(a.p, b.p) && isequal(a.o, b.o) &&
+            isequal(a.v, b.v) && isequal(a.θ, b.θ) && isequal(a.ISR, b.ISR))
 end
 function ==(a::EdgeState, b::EdgeState)
     return (isequal(a.u, b.u) && isequal(a.v, b.v) &&
-            isequal(a.o, b.o) && isequal(a.l, b.l))
+            isequal(a.o, b.o) && isequal(a.l, b.l) && isequal(a.ISR, b.ISR))
 end
 function ==(a::NodeState, b::EdgeState)
     return false
@@ -121,14 +164,16 @@ function Base.hash(a::NodeState, h::UInt)
     h = hash(a.o, h)
     h = hash(a.v, h)
     h = hash(a.θ, h)
+    h = hash(a.ISR, h)
     return h
 end
-
+#
 function Base.hash(a::EdgeState, h::UInt)
     h = hash(a.u, h)
     h = hash(a.v, h)
     h = hash(a.o, h)
     h = hash(a.l, h)
+    h = hash(a.ISR, h)
     return h
 end
 
@@ -145,6 +190,8 @@ function Base.hash(a::DomainAction, h::UInt)
 end
 
 mutable struct DomainSSP
+    F_active
+    F_inactive
     S
     A
     T
@@ -155,7 +202,8 @@ mutable struct DomainSSP
     AIndex::Dict{DomainAction, Int}
     graph
 end
-function DomainSSP(S::Vector{DomainState},
+function DomainSSP(F_active, F_inactive,
+                   S::Vector{DomainState},
                    A::Vector{DomainAction},
                    T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
                    C::Function,
@@ -163,7 +211,7 @@ function DomainSSP(S::Vector{DomainState},
                    G::Set{DomainState},
                graph::Graph)
     SIndex, AIndex = generate_index_dicts(S, A)
-    return DomainSSP(S, A, T, C, s₀, G, SIndex, AIndex, graph)
+    return DomainSSP(F_active, F_inactive, S, A, T, C, s₀, G, SIndex, AIndex, graph)
 end
 
 function generate_index_dicts(S::Vector{DomainState}, A::Vector{DomainAction})
@@ -180,55 +228,76 @@ end
 
 function generate_states(G::Graph,
                       init::Int,
-                      goal::Int)
+                      goal::Int,
+                      F_active, W)
     N, E = G.nodes, G.edges
     S = Vector{DomainState}()
     G = Set{DomainState}()
-    s₀= PRESERVE_NONE
-    g = PRESERVE_NONE
+
+    F = OrderedDict(k=>WorldFeatures[k] for k in F_active["node"]
+                                        if k in keys(WorldFeatures))
+    ISR = vec(collect(Base.product(values(F)...)))
     for node_id in keys(N)
         node = N[node_id]
         for p in [false, true]
             for o in [false, true]
                 for v in [0,1,2,3,4]
                     for θ in DIRECTIONS
-                        state = NodeState(node_id, p, o, v, θ)
-                        push!(S, state)
-                        if node_id == goal
-                            push!(G, state)
+                        for x in ISR
+                            state = NodeState(node_id, p, o, v, θ, x)
+                            push!(S, state)
+                            if node_id == goal
+                                push!(G, state)
+                            end
                         end
                     end
                 end
             end
         end
     end
+    s₀ = NodeState(init, false, false, 0, '↑', Tuple([getproperty(W, f) for
+                                     f in F_active["node"] if hasproperty(W, f)]))
 
-    s₀ = NodeState(init, false, false, 0, '↑')
-
+    F = OrderedDict(k=>WorldFeatures[k] for k in F_active["edge"]
+                                        if k in keys(WorldFeatures))
+    ISR = vec(collect(Base.product(values(F)...)))
     for u in keys(E)
         for v in keys(E[u])
             for o in [false, true]
-                state = EdgeState(u, v, E[u][v]["direction"],
-                                     o, E[u][v]["num lanes"])
-                push!(S, state)
+                for x in ISR
+                    state = EdgeState(u, v, E[u][v]["direction"],
+                                         o, E[u][v]["num lanes"], x)
+                    if state ∈ S
+                        println(ISR)
+                        println(state)
+                    end
+                    push!(S, state)
+                end
             end
         end
     end
     return S, s₀, G
 end
 
-function set_init!(M, init)
-    M.s₀ = NodeState(init, false, false, 0, '↑')
+function set_init!(M, W, init)
+    M.s₀ = NodeState(init, false, false, 0, '↑', Tuple([getproperty(W, f) for
+                                    f in M.F_active["node"] if hasproperty(W, f)]))
 end
 
 function set_goal!(M, goal)
+    F = OrderedDict(k=>WorldFeatures[k] for k in M.F_active["node"]
+                                        if k in keys(WorldFeatures))
+    ISR = vec(collect(Base.product(values(F)...)))
+
     M.G = Set{DomainState}()
     for p in [false, true]
         for o in [false, true]
             for v in [0,1,2,3,4]
                 for θ in DIRECTIONS
-                    state = NodeState(goal, p, o, v, θ)
-                    push!(M.G, state)
+                    for x in ISR
+                        state = NodeState(goal, p, o, v, θ, x)
+                        push!(M.G, state)
+                    end
                 end
             end
         end
@@ -268,7 +337,7 @@ function generate_transitions!(M, G)
                     T[s][a] = go_straight_distribution(M, state, s, G)
                 elseif action.value == '↓'
                     state′ = NodeState(state.id, state.p, state.o, state.v,
-                                       change_direction(state.θ, '↓'))
+                                       change_direction(state.θ, '↓'), state.ISR)
                     T[s][a] = [(M.SIndex[state′], 1.0)]
                 else
                     T[s][a] = wait_distribution(M, state, s, G)
@@ -300,10 +369,10 @@ function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gra
     else
         p = E[state.id][dest_id]["obstruction probability"]
 
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], state.ISR)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], state.ISR)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -319,11 +388,11 @@ function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gr
     if dest_id == -1
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], state.ISR)
         p = E[state.id][dest_id]["obstruction probability"]
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], state.ISR)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -338,11 +407,11 @@ function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::G
     if dest_id == -1
         return [(s, 1.0)]
     else
-        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"], state.ISR)
         p = E[state.id][dest_id]["obstruction probability"]
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"])
+        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"], state.ISR)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
@@ -358,13 +427,13 @@ function wait_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
     p_vehicles = node["vehicle probabilities"]
 
     for num_vehicle in [0,1,2,3]
-        state′ = NodeState(state.id, false, false, num_vehicle, state.θ)
+        state′ = NodeState(state.id, false, false, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], ((1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, true, false, num_vehicle, state.θ)
+        state′ = NodeState(state.id, true, false, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], (p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, false, true, num_vehicle, state.θ)
+        state′ = NodeState(state.id, false, true, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], ((1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, true, true, num_vehicle, state.θ)
+        state′ = NodeState(state.id, true, true, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], (p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
     return T
@@ -390,10 +459,10 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
 
     mass = 0.0
 
-    state′ = EdgeState(state.u, state.v, state.θ, true, edge["num lanes"])
+    state′ = EdgeState(state.u, state.v, state.θ, true, edge["num lanes"], state.ISR)
     push!(T, (M.SIndex[state′], p_driving * p_obstruction))
     mass += p_driving * p_obstruction
-    state′ = EdgeState(state.u, state.v, state.θ, false, edge["num lanes"])
+    state′ = EdgeState(state.u, state.v, state.θ, false, edge["num lanes"], state.ISR)
     push!(T, (M.SIndex[state′], p_driving * (1 - p_obstruction)))
     mass += p_driving * (1 - p_obstruction)
 
@@ -403,13 +472,13 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
     p_vehicles = node["vehicle probabilities"]
 
     for num_vehicle in [0,1,2,3]
-        state′ = NodeState(state.v, false, false, num_vehicle, state.θ)
+        state′ = NodeState(state.v, false, false, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], ((1 - mass)*(1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, true, false, num_vehicle, state.θ)
+        state′ = NodeState(state.v, true, false, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], ((1 - mass)*p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, false, true, num_vehicle, state.θ)
+        state′ = NodeState(state.v, false, true, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], ((1 - mass)*(1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, true, true, num_vehicle, state.θ)
+        state′ = NodeState(state.v, true, true, num_vehicle, state.θ, state.ISR)
         push!(T, (M.SIndex[state′], ((1 - mass)*p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
 
@@ -425,7 +494,7 @@ function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int,
         return [(s, 1.0)]
     else
         num_lanes = E[state.u][state.v]["num lanes"]
-        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes)
+        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes, state.ISR)
         s′ = M.SIndex[state′]
         p = 1.0
         if num_lanes == 1
@@ -515,29 +584,45 @@ function simulate(M::DomainSSP, L)
     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
 end
 
-function build_model()
-    # G = generate_map(filepath)
-    # G = generate_dummy_graph()
+function update_features!(M, d)
+    try
+        M.F_inactive = reshape(deleteat!(vec(M.F_inactive), vec(M.F_inactive) .== d), 1, :)
+        if d ∉ M.F_active["node"]
+            M.F_active["node"] = hcat(M.F_active["node"], d)
+        end
+        if d ∉ M.F_active["edge"]
+            M.F_active["edge"] = hcat(M.F_active["edge"], d)
+        end
+    catch
+        println("Error: discriminator == $d")
+    end
+end
+
+function build_model(W::WorldState,
+                     F_active = Dict("node"=>[:p :o :v],
+                                     "edge"=>[:o :l]),
+                     F_inactive = reshape([f for f in keys(WorldFeatures)],1,:))
     graph = generate_ma_graph()
     init = rand(1:16)
     goal = rand(1:16)
     while goal == init
         goal = rand(1:16)
     end
-    S, s₀, G = generate_states(graph, init, goal)
+    S, s₀, G = generate_states(graph, init, goal, F_active, W)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
-    M = DomainSSP(S, A, T, generate_costs, s₀, G, graph)
+    M = DomainSSP(F_active, F_inactive, S, A, T, generate_costs, s₀, G, graph)
     generate_transitions!(M, graph)
     check_transition_validity(M)
     return M
 end
 function build_model!(M, W)
-    M.S, M.G = generate_states(M.F_active)
-    M.s₀ = DomainState(0, -1, false, Tuple([getproperty(W, f) for f in M.F_active if hasproperty(W, f)]))
-    M.SIndex, M.AIndex = generate_index_dicts(M.S, M.A)
+    S, s₀, G = generate_states(M.graph, M.s₀.id, pop!(M.G).id, M.F_active, W)
+    M.S, M.s₀, M.G = S, s₀, G
+    SIndex, AIndex = generate_index_dicts(M.S, M.A)
+    M.SIndex, M.AIndex = SIndex, AIndex
     M.T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
-    generate_transitions!(M)
+    generate_transitions!(M, M.graph)
     check_transition_validity(M)
 end
 
@@ -559,9 +644,3 @@ end
 function allowed(D::DomainSSP, s::Int, a::Int)
     return true
 end
-#
-# M = build_model()
-# L = solve_model(M)
-# simulate(M, L)
-#
-# main_dm()

@@ -29,10 +29,9 @@ end
 WorldStates = [WorldState(T) for T in vec(collect(Base.product(values(WorldFeatures)...)))]
 
 function set_world_state!(W1, W2)
-    W1.trailing = W2.trailing
-    W1.time = W2.time
-    W1.weather = W2.weather
-    W1.waiting = W2.waiting
+    for f in fieldnames(W1)
+        setfield!(W1, f, getproperty(W2, f))
+    end
 end
 
 function set_random_world_state!(W1)
