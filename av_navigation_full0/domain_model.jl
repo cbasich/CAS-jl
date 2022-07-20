@@ -310,7 +310,7 @@ end
 
 function generate_actions()
     A = Vector{DomainAction}()
-    for value in ['←', '↑', '→', '↓', '⤉']
+    for value in ['⤉', '↑', '←', '→', '↓']
         push!(A, DomainAction(value))
     end
     return A
@@ -329,18 +329,20 @@ function generate_transitions!(M, G)
 
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)
-                if action.value == '←'
-                    T[s][a] = left_turn_distribution(M, state, s, G)
-                elseif action.value == '→'
-                    T[s][a] = right_turn_distribution(M, state, s, G)
-                elseif action.value == '↑'
-                    T[s][a] = go_straight_distribution(M, state, s, G)
-                elseif action.value == '↓'
-                    state′ = NodeState(state.id, state.p, state.o, state.v,
-                                       change_direction(state.θ, '↓'), state.ISR)
-                    T[s][a] = [(M.SIndex[state′], 1.0)]
-                else
+                if action.value == '⤉'
                     T[s][a] = wait_distribution(M, state, s, G)
+                else
+                    if action.value == '←'
+                        T[s][a] = left_turn_distribution(M, state, s, G)
+                    elseif action.value == '→'
+                        T[s][a] = right_turn_distribution(M, state, s, G)
+                    elseif action.value == '↑'
+                        T[s][a] = go_straight_distribution(M, state, s, G)
+                    elseif action.value == '↓'
+                        state′ = NodeState(state.id, state.p, state.o, state.v,
+                                           change_direction(state.θ, '↓'), state.ISR)
+                        T[s][a] = [(M.SIndex[state′], 1.0)]
+                    end
                 end
             end
         elseif typeof(state) == EdgeState
@@ -518,7 +520,11 @@ function generate_costs(M::DomainSSP, s::Int, a::Int)
         return 100.0
     else
         if typeof(M.S[s]) == NodeState
-            return 1.0
+            if M.A[a] == '⤉'
+                return 0.1
+            else
+                return 0.5
+            end
         else
             return 0.1
         end
@@ -617,8 +623,10 @@ function build_model(W::WorldState,
     return M
 end
 function build_model!(M, W)
-    M.S, M.s₀, M.G = generate_states(M.graph, M.s₀.id, pop!(M.G).id, M.F_active, W)
-    M.SIndex, M.AIndex = generate_index_dicts(M.S, M.A)
+    S, s₀, G = generate_states(M.graph, M.s₀.id, pop!(M.G).id, M.F_active, W)
+    M.S, M.s₀, M.G = S, s₀, G
+    SIndex, AIndex = generate_index_dicts(M.S, M.A)
+    M.SIndex, M.AIndex = SIndex, AIndex
     M.T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     generate_transitions!(M, M.graph)
     check_transition_validity(M)

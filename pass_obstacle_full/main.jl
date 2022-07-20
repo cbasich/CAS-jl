@@ -89,7 +89,7 @@ function simulate(M::CASSP, L, m)
             if σ == '⊘'
                 override_rate_records_per_ep[state.state][2] += 1
                 if i == m
-                    println("override detected at state:     $state      |     action: $action")
+                    # println("override detected at state:     $state      |     action: $action")
                     signal_count += 1
                 end
             end
@@ -127,6 +127,7 @@ function run_episodes(M, C, L)
     signal_counts = Vector{Int}()
     signal_counts_per_10 = Vector{Int}()
     lo_function_of_signal_count = Vector{Tuple{Int, Float64}}()
+    discrims = Vector{Any}()
     # override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
     total_signals_received = 0
     results = []
@@ -142,6 +143,7 @@ function run_episodes(M, C, L)
         total_signals_received += signal_count
 
         # Per episode record keeping.
+        push!(expected_task_costs, ℒ.V[C.SIndex[C.s₀]])
         push!(costs, c)
         push!(stds, std)
         push!(cost_errors, error)
@@ -149,7 +151,7 @@ function run_episodes(M, C, L)
         push!(lo_function_of_signal_count, (total_signals_received, percent_lo))
 
         # Per 10 episode record keeping (high compute).
-        if i == 1 || i%10 == 0
+        if i == 1 || i%5 == 0
             lo, lo_r = compute_level_optimality(C, ℒ)
             push!(los, lo)
             push!(los_r, lo_r)
@@ -160,28 +162,30 @@ function run_episodes(M, C, L)
             # for (a, data) in C.𝒮.F.D
             #     record_data(data,joinpath(abspath(@__DIR__), "data", "$a.csv"), false)
             # end
-            if i != 1
-                if !isempty(M.F_inactive)
-                    candidates = find_candidates(C)
-                    if !isempty(candidates)
-                        candidate = sample(candidates)
-                        discriminator = get_discriminator(C, candidate, 3)
-                        if discriminator != -1
-                            update_features!(M, discriminator)
-                            for action in M.A
-                                update_data!(C, action)
-                            end
-                            save_data(C.𝒮.F.D)
-                            save_full_data(C.𝒮.F.D_full)
-
-                            # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
-                            # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
-                            build_model!(M, C.𝒮.W)
-                            build_cas!(C)
-                        end
-                    end
-                end
-            end
+            # if i%10 == 0
+            #     if !isempty(M.F_inactive)
+            #         candidates = find_candidates(C)
+            #         if !isempty(candidates)
+            #             candidate = sample(candidates)
+            #             discriminator = get_discriminator(C, candidate, 3)
+            #             if discriminator != -1
+            #                 push!(discrims, i)
+            #                 println("Adding discriminator $discriminator")
+            #                 update_features!(M, discriminator)
+            #                 for action in M.A
+            #                     update_data!(C, action)
+            #                 end
+            #                 save_data(C.𝒮.F.D)
+            #                 save_full_data(C.𝒮.F.D_full)
+            #
+            #                 # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
+            #                 # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
+            #                 build_model!(M, C.𝒮.W)
+            #                 build_cas!(C)
+            #             end
+            #         end
+            #     end
+            # end
         end
 
         # Update model
@@ -190,25 +194,28 @@ function run_episodes(M, C, L)
         update_autonomy_profile!(C, ℒ)
 
 
-        results = [costs, stds, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, expected_task_costs]
+        results = [costs, stds, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, expected_task_costs, discrims]
         save(joinpath(abspath(@__DIR__), "results.jld"), "results", results)
 
         x = signal_counts
 
         los_a = [x[2] for x in lo_function_of_signal_count]
-        los_a = append!([los_a[1]], los_a[10:10:end])
+        los_a = append!([los_a[1]], los_a[5:5:end])
 
-        g = scatter(signal_counts_per_10, [los los_a los_r], xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited" "Reachable"])
+        g = scatter(signal_counts_per_10, [los los_r los_a], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable" "Visited" ])
         savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
         #
-        g2 = scatter(x, cost_errors, xlabel="Signals Received", ylabel="%Error")
+        g2 = scatter(x, cost_errors, legend=:topleft, xlabel="Signals Received", ylabel="%Error")
         savefig(g2, joinpath(abspath(@__DIR__), "plots", "percent_error.png"))
 
-        g3 = scatter(x, stds, xlabel="Signals Received", ylabel="Reliability")
+        g3 = scatter(x, stds, legend=:topleft, xlabel="Signals Received", ylabel="Reliability")
         savefig(g3, joinpath(abspath(@__DIR__), "plots", "reliability.png"))
 
-        g4 = scatter(x, costs, xlabel="Signals Received", ylabel="Cost to Goal")
+        g4 = scatter(x, costs, legend=:topleft, xlabel="Signals Received", ylabel="Cost to Goal")
         savefig(g4, joinpath(abspath(@__DIR__), "plots", "task_cost.png"))
+
+        g5 = scatter(x, expected_task_costs, legend=:topleft, xlabel="Signals Received", ylabel="Expected Cost to Goal")
+        savefig(g4, joinpath(abspath(@__DIR__), "plots", "expected_task_cost.png"))
     end
     save_data(C.𝒮.F.D)
     save_full_data(C.𝒮.F.D_full)
@@ -234,11 +241,20 @@ L = solve_model(C)
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
 results = run_episodes(M, C, L)
 
-results = load(joinpath(abspath(@__DIR__), "person_untrusting", "ISR", "results.jld"), "results")
-results2 = load(joinpath(abspath(@__DIR__), "person_untrusting", "normal", "results.jld"), "results")
+simulate(C, L, 1)
 
-ISR_los_active = [x[2] for x in results[5][1:10:100]]
-norm_los_active = [x[2] for x in results2[5][1:10:500]]
+results = load(joinpath(abspath(@__DIR__), "person_rush", "ISR", "results.jld"), "results")
+results2 = load(joinpath(abspath(@__DIR__), "person_rush", "normal", "results.jld"), "results")
+
+ISR_los_active = [x[2] for x in results[6][1:10:100]]
+norm_los_active = [x[2] for x in results2[6][1:10:500]]
 
 scatter([ISR_los_active norm_los_active results[4][1:50] results2[4][1:50]])
 scatter([results[4] results2[4]])
+
+results = load(joinpath(abspath(@__DIR__), "person_rush", "ISR", "results.jld"), "results")
+signal_counts_per_10 = cat(results[6][1], results[6][10:10:end], dims=1)
+savefig(scatter(signal_counts_per_10, [results[4] results[5] results[6]],
+        xlims=[0, 50], ylims=[0, 1.0], legend=:topleft,
+        xlabel="Signal Count", ylabel="Level-Optimality", label=["All States" "Reachable"]),
+        joinpath(abspath(@__DIR__),  "person_rush", "ISR", "plots", "level_optimality_by_signal_count.png"))

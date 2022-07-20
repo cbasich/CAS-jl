@@ -67,9 +67,11 @@ function trial(solver, s)
     visited = Set()
 
     while s ∉ solver.solved
+        # println(s)
         if solver.M.S[s] ∈ solver.M.G || total_cost > solver.dead_end_cost
             break
         end
+        # println(s)
 
         push!(visited, s)
         bellman_update(solver, s)

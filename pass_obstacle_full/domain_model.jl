@@ -29,16 +29,16 @@ end
 WorldStates = [WorldState(T) for T in vec(collect(Base.product(values(WorldFeatures)...)))]
 
 function set_world_state!(W1, W2)
-    for f in fieldnames(W1)
+    for f in fieldnames(typeof(W1))
         setfield!(W1, f, getproperty(W2, f))
     end
 end
 
 function set_random_world_state!(W1)
-    W.trailing = sample([false true], aweights([0.7, 0.3]))
-    W.time = sample(["night" "day"], aweights([0.7 0.3]))
-    W.weather = sample(["sunny" "rainy" "snowy"], aweights([0.85, 0.1, 0.05]))
-    W.waiting = sample([false true], aweights([0.7, 0.3]))
+    W.trailing = sample([false true], aweights([0.5, 0.5]))
+    W.time = sample(["night" "day"], aweights([0.6 0.4]))
+    W.weather = sample(["sunny" "rainy" "snowy"], aweights([0.5, 0.35, 0.15]))
+    W.waiting = sample([false true], aweights([0.6, 0.4]))
 end
 
 function get_random_world_state()

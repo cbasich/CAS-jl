@@ -86,7 +86,7 @@ function simulate(M::CASSP, L, m)
 
             actions_taken += 1
             actions_at_competence += (action.l == competence(state.state, M.𝒮.W, action.action))
-            # println("$i   |   Taking action $action in state $state.")
+            # println("$i  |   Taking action $action in state $state.")
             if action.l == 0 || action.l == 3
                 σ = '∅'
             elseif action.l == 1
@@ -167,9 +167,6 @@ function simulate(M::CASSP, L, m)
             end
             # println(σ, "     | succ state |      ", state)
             if terminal(M, state) || episode_cost > 500.0
-                if episode_cost > 500.0
-                    @infiltrate
-                end
                 break
             end
         end
@@ -199,10 +196,10 @@ function run_episodes(M, C)
     expected_task_costs = Vector{Float64}()
     discrims = []
     results = []
-    for i=1:200
+    for i=1:50
         println(i)
         initialize_random_start!(C.𝒮.W)
-
+        # build_cas!(C)
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         set_route(M, C, init, goal)
@@ -232,12 +229,12 @@ function run_episodes(M, C)
         # push!(lo_function_of_signal_count2, (total_signals_received2, percent_lo2))
 
         # Per 10 episode record keeping (high compute).
-        if i == 1 || i%10 == 0
-            lo, lo_r = compute_level_optimality(C, ℒ)
-            push!(los, lo)
-            push!(los_r, lo_r)
-            push!(signal_counts_per_10, total_signals_received)
-            push!(signal_counts_per_10_2, total_signals_received2)
+        # if i == 1 || i%10 == 0
+        lo, lo_r = compute_level_optimality(C, ℒ)
+        push!(los, lo)
+        push!(los_r, lo_r)
+        push!(signal_counts_per_10, total_signals_received)
+        push!(signal_counts_per_10_2, total_signals_received2)
 
             # Fixed route results
             # set_route(M, C, 12, 7)
@@ -258,7 +255,6 @@ function run_episodes(M, C)
             #             candidate = sample(candidates)
             #             discriminator = get_discriminator(C, candidate, 3)
             #             if discriminator != -1
-            #                 @infiltrate
             #                 println("Added discriminator $discriminator.")
             #                 push!(discrims, (i, discriminator))
             #                 update_features!(M, discriminator)
@@ -280,7 +276,7 @@ function run_episodes(M, C)
             #         end
             #     end
             # end
-        end
+        # end
 
         # if i ==1 || i%100 == 0
         #     route_records[i] = Dict{String, Any}()
@@ -301,9 +297,10 @@ function run_episodes(M, C)
 
         # Update model
         update_feedback_profile!(C)
+        # ℒ = solve_model(C)
         update_autonomy_profile!(C, ℒ)
         save_data(C.𝒮.F.D)
-        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        # generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 
         # results = [costs, costs2, stds, stds2, expected_task_costs, cost_errors, cost_errors2, los, los_r, lo_function_of_signal_count, lo_function_of_signal_count2, signal_counts, signal_counts2, fixed_task_costs, fixed_task_costs2, route_records]
         results = [costs, stds, expected_task_costs, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, fixed_task_costs, route_records, discrims]
@@ -311,16 +308,23 @@ function run_episodes(M, C)
 
         x = signal_counts
         los_a = [v[2] for v in lo_function_of_signal_count]
-        los_a = append!([los_a[1]], los_a[10:10:end])
+        # los_a = append!([los_a[1]], los_a[10:10:end])
 
-        g = scatter(signal_counts_per_10, [los los_r los_a], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable" "Visited"])
+        g = scatter(signal_counts_per_10, [los los_a], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited"])
         savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
+
+        g1 = plot([los los_a], legend=:topleft, ylims=(0.,1.), xlabel="Episode", ylabel="Level Optimality", label = ["All States" "Visited"])
+        savefig(g1, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_episode.png"))
 
         g2 = scatter(x, cost_errors, xlabel="Signals Received", legend=:topleft, ylabel="%Error")
         savefig(g2, joinpath(abspath(@__DIR__), "plots", "percent_error.png"))
 
         g3 = scatter(x, stds, xlabel="Signals Received", legend=:topleft, ylabel="Reliability")
         savefig(g3, joinpath(abspath(@__DIR__), "plots", "standard_devs.png"))
+
+        task_errors = 100.0 .* ((costs .- expected_task_costs/costs)./costs)
+        g4 = plot(task_errors, xlabel="Episode", ylabel="% Error")
+        savefig(g4, joinpath(abspath(@__DIR__), "plots", "cost_errors.png"))
 
         # g4 = scatter(signal_counts_per_10, fixed_task_costs, xlabel="Episode", ylabel="Average Cost to Goal")
         # savefig(g4, joinpath(abspath(@__DIR__), "plots", "fixed_task_costs.png"))
@@ -343,10 +347,39 @@ end
 W = get_random_world_state()
 M = build_model(W)
 init_data(M)
-C = build_cas(M, W, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+C = build_cas(M, W, [0,3,2,1], ['⊕', '⊖', '⊘', '∅'])
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
 results = run_episodes(M, C)
-simulate(C, L, 1)
+
+
+
+results_isr = load(joinpath(abspath(@__DIR__), "person_conscientious", "ISR", "results.jld"), "results")
+results_norm = load(joinpath(abspath(@__DIR__), "person_conscientious", "normal", "results.jld"), "results")
+
+los_a_isr = results_isr[5]
+los_v_isr = [x[2] for x in results_isr[7]]
+los_v_isr = append!([los_v_isr[1]], los_v_isr[10:10:end])
+x = results_isr[8]
+x = append!([x[1]], x[10:10:end])
+
+los_a_norm = results_norm[5]
+los_v_norm = [x[2] for x in results_norm[7]]
+los_v_norm = append!([los_v_norm[1]], los_v_norm[10:10:end])
+x2 = results_norm[8]
+x2 = append!([x2[1]], x2[10:10:end])
+
+g = scatter(x, [los_a_isr los_v_isr], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited"])
+savefig(g, joinpath(abspath(@__DIR__), "plots", "av_lo_isr_conscientious.png"))
+g = scatter(x2[1:15], [los_a_norm[1:15] los_v_norm[1:15]], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited"])
+savefig(g, joinpath(abspath(@__DIR__), "plots", "av_lo_isr_conscientious.png"))
+
+
+los_a_norm = results_norm[4]
+los_r_norm = results_norm[5]
+los_v_norm = results_norm[6]
+
+plot([los_r_isr los_v_isr los_r_norm los_v_norm])
+
 # results2 = run_episodes(M, C)
 # simulate(M, L2, 10)
 # L = solve_model(C)
@@ -366,14 +399,39 @@ simulate(C, L, 1)
 #         xlabel="Signal Count", ylabel="Level-Optimality", label=["All States" "Reachable"]),
 #         joinpath(abspath(@__DIR__), "data_eps+", "plots", "level_optimality_by_signal_count_eps+.png"))
 #
-
-results1 = load(joinpath(abspath(@__DIR__), "Experiment 1", "new_person_untrusting", "isr", "results.jld"), "results")
-results2 = load(joinpath(abspath(@__DIR__), "Experiment 1", "new_person_untrusting", "normal", "results.jld"), "results")
-
-costs1 = results1[1]
-costs2 = results2[1]
-
-exp_costs1 = results1[3]
-exp_costs2 = results2[3]
-
-errors1 = (costs1 .- exp_costs1) ./ costs1
+#
+# routes = last(results)
+# starting_routes = routes[1]
+# ending_routes = routes[400]
+#
+# init_route = last(results)[1]
+# end_route = last(results)[400]
+#
+# for k in keys(init_route)
+#     if init_route[k]["route"] != end_route[k]["route"]
+#     end
+#         println(k, ": ", init_route[k], "  ⟶  ", end_route[k])
+# end
+#
+# total_overrides = override_rate_records[1]
+# for i=2:length(override_rate_records)
+#     for k in keys(override_rate_records[i])
+#         if haskey(total_overrides, k)
+#             total_overrides[k][1] += override_rate_records[i][k][1]
+#             total_overrides[k][2] += override_rate_records[i][k][2]
+#         else
+#             total_overrides[k] = override_rate_records[i][k]
+#         end
+#     end
+# end
+# override_rates = Dict(k => (v[2]/v[1]) for (k,v) in total_overrides if (v[1] > 50 && v[2] > 0))
+#
+# results = load(joinpath(abspath(@__DIR__), "results.jld"), "results")
+# results2 = load(joinpath(abspath(@__DIR__), "results3.jld"), "results3")
+# los = cat(results[7], results2[7], dims=1)[1:130]
+# los_r = cat(results[8], results2[8], dims=1)[1:130]
+# signal_counts_per_10 = cat(results[11], (363 .+ results2[11]), dims=1)#[1:10:end]
+#
+# exp_cost1 = cat(results[13], results2[13], dims=1)
+# exp_cost2 = cat(results[14], results2[14], dims=1)
+# g4 = scatter(signal_counts_per_10, [exp_cost1 exp_cost2], xlabel="Signals", ylabel="Expected Cost to Goal")

@@ -113,9 +113,9 @@ function update_autonomy_profile!(C, ℒ)
             # end
             L = [κ[s][a]-1, κ[s][a], κ[s][a]+1]
             update_potential(C, ℒ, s, a, L)
-
             distr = softmax([C.potential[s][a][l+1] for l in L])
             i = sample(aweights(distr))
+
             if L[i] == 3
                 if C.𝒮.F.λ[s][a][2]['∅'] < 0.85
                     C.potential[s][a][L[i] + 1] = 0.0
@@ -192,8 +192,6 @@ function competence(state::DomainState,
     # end
 
     if typeof(state) == EdgeState
-        # if state.o && state.l == 1
-        #     return 0
         if state.o && (state.l == 1 || wstate.weather == "snowy" || (state.l == 2 &&
               wstate.weather == "rainy" && wstate.time == "night"))
               return 0
@@ -203,7 +201,6 @@ function competence(state::DomainState,
             return 3
         end
     else
-
         # if action.value == '⤉'
         #     if !wstate.trailing
         #         return 3
@@ -213,8 +210,10 @@ function competence(state::DomainState,
         #     end
         if action.value == '⤉'
             return 3
-        elseif wstate.trailing && state.v > 1
+        elseif (wstate.weather == "rainy" && wstate.time == "night")
             return 0
+        # elseif wstate.trailing && state.v > 1
+        #     return 0
         elseif action.value == '→'
             if state.o && state.p && state.v > 1
                 return 0
@@ -251,9 +250,9 @@ function autonomy_cost(state::CASstate)
     if state.σ == '⊕' || state.σ == '∅'
         return 0.0
     elseif state.σ == '⊖'
-        return 1.0
+        return 0.2
     elseif state.σ == '⊘'
-        return 3.5
+        return 1.0
     end
 end
 ##
@@ -521,10 +520,11 @@ function save_full_data(D)
 end
 
 function human_cost(action::CASaction)
-    return [5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
+    return [1.0 0.2 0.1 0.][action.l + 1]
+    # return [10. 1.5 1.0 0.][action.l + 1]              #TODO: Fix this.
 end
 
-function find_candidates(C; δ=0.1, threshold=Dict(NodeState => 10, EdgeState => 60))
+function find_candidates(C; δ=0.1, threshold=Dict(NodeState => 10, EdgeState => 30))
     λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
     S, A = 𝒟.S, 𝒟.A
 
@@ -732,6 +732,9 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                 p_approve = λ[base_s][base_a][1]['⊕']
                 p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
                 push!(T[s][a], ((base_s-1) * 4 + 2, p_disapprove))
+                # for (sp, p) in T[s][a-1]
+                #     push!(T[s][a], (sp, p * p_approve))
+                # end
                 for (sp, p) in t
                     push!(T[s][a], ((sp-1) * 4 + 1, p * p_approve))
                 end
@@ -830,25 +833,25 @@ function generate_feedback(state::CASstate,
         if state.state.o && (state.state.l == 1 || wstate.weather == "snowy" || (state.state.l == 2 &&
               wstate.weather == "rainy" && wstate.time == "night"))
             return (action.l == 1) ? '⊖' : '⊘'
-        # if state.state.o && state.state.l == 1
+        # if state.state.o && (state.state.l == 1 || wstate.trailing)
         #     return (action.l == 1) ? '⊖' : '⊘'
         else
             return (action.l == 1) ? '⊕' : '∅'
         end
     else
-        # elseif wstate.weather == "snowy" && wstate.time == "night"
-        #     return (action.l == 1) ? '⊖' : '⊘'
-
-            # Person -- rushed
-            # if wstate.trailing
-            #     return (action.l == 1) ? '⊖' : '⊘'
-            # else
-            #     return (action.l == 1) ? '⊕' : '∅'
-            # end
+        # Person -- rushed
+        # if action.action.value == '⤉'           # TEST THIS AGAIN
+        #     if wstate.trailing
+        #         return (action.l == 1) ? '⊖' : '⊘'
+        #     else
+        #         return (action.l == 1) ? '⊕' : '∅'
+        #     end
         if action.action.value == '⤉'
             return (action.l == 1) ? '⊕' : '∅'
-        elseif wstate.trailing && state.state.v > 1
-            return (action.l == 1) ? '⊖' : '⊘'
+        elseif (wstate.weather == "rainy" && wstate.time == "night")
+                return (action.l == 1) ? '⊖' : '⊘'
+        # elseif wstate.trailing && state.state.v > 1
+        #     return (action.l == 1) ? '⊖' : '⊘'
         elseif action.action.value == '→'
             if state.state.o && state.state.p && state.state.v > 1
                 return (action.l == 1) ? '⊖' : '⊘'
@@ -913,15 +916,15 @@ end
 
 function compute_level_optimality(C, ℒ)
     total = 0
-    r = 0
+    # r = 0
     lo = 0
-    lo_r = 0
+    # lo_r = 0
     # for s in keys(ℒ.π)
-    R = reachable(C, ℒ)
+    # @time R = reachable(C, ℒ)
     for w in WorldStates
         set_world_state!(C.𝒮.W, w)
         for (s, state) in enumerate(C.S)
-            if terminal(C, state)
+            if terminal(C, state) #|| (typeof(state.state) == EdgeState && !state.state.o)
                 continue
             end
             state_type = (typeof(state.state) == NodeState) ? "node" : "edge"
@@ -935,17 +938,17 @@ function compute_level_optimality(C, ℒ)
             action = C.A[ℒ.π[s]]
             comp = (action.l == competence(state.state, w, action.action))
             lo += comp
-            if s in R
-                r += 1
-                lo_r += comp
-            end
+            # if s in R
+            #     r += 1
+            #     lo_r += comp
+            # end
         end
     end
     # println("  ")
     # println(lo)
     # println(total)
 
-    return lo/total, lo_r/r
+    return lo/total, 0
 end
 
 function build_cas(𝒟::DomainSSP,
@@ -1008,7 +1011,7 @@ function build_cas!(C::CASSP)
 end
 
 function solve_model(C::CASSP)
-    ℒ = LRTDPsolver(C, 10000., 1000, .001, Dict{Int, Int}(),
+    ℒ = LRTDPsolver(C, 1000., 100, .001, Dict{Int, Int}(),
                      false, Set{Int}(), zeros(length(C.S)),
                                         zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])

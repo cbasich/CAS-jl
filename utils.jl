@@ -13,6 +13,7 @@ function record_data(data::DataFrame, filepath, append=false)
     CSV.write(filepath, data, append=append)
 end
 function record_data!(data, df)
+    # println(df)
     df = push!(copy(df), data)
     # catch
     #     # println(df)
@@ -153,7 +154,7 @@ function build_lambda(D_train, features, discriminator)
     #     println("Discriminator: ", discriminator)
     # end
     Y = D_train[:, :σ]
-    λ = build_forest(Y, X, -1, 65, 0.7, -1)
+    λ = build_forest(Y, X, -1, 11, 0.7, -1)
     return λ
 end
 
@@ -187,14 +188,14 @@ function test_discriminators(C, D, D_full, D_train, D_test, F, discriminators)
 
     # X₀, Y₀ = split_data(D)
     X₀, Y₀ = D_train[!, vec(F)], D_train[:, :σ]
-    λ₀ = build_forest(Y₀, Matrix(X₀), -1, 65, 0.7, -1)
+    λ₀ = build_forest(Y₀, Matrix(X₀), -1, 11, 0.7, -1)
     curr_score = test_lambda(λ₀, D_test, F, -1)
 
     # X₀, Y₀ = Matrix(D_full[!, vec(F)]), D_full[!, :σ]
     # curr_score = mean(nfoldCV_forest(Y₀, X₀, 3, -1, 10, 0.7, -1; verbose=false))
     println("Curr score: $curr_score")
     println("Best score: $best_score")
-    if best_score > curr_score + 0.1
+    if best_score > curr_score + 0.2
         return best_discriminator
     else
         return -1

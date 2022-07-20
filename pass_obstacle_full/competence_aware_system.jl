@@ -63,22 +63,14 @@ function update_potential(C, ℒ, s, a, L)
 end
 
 function update_autonomy_profile!(C, ℒ)
-    κ, D = C.𝒮.A.κ, C.𝒮.F.D
+    κ, D, D_full = C.𝒮.A.κ, C.𝒮.F.D, C.𝒮.F.D_full
     for (s, state) in enumerate(C.𝒮.D.S)
         if state.position == -1
             continue
         end
         f = get_state_features(C, state)
         for (a, action) in enumerate(C.𝒮.D.A)
-            # if κ[s][a] == competence(state, C.𝒮.W, action)
-            # G = groupby(D[string(action.value)], vec(C.𝒮.D.F_active))
-            # count = -1
-            # try
-            #     count = nrow(G[Tuple(f)])
-            # catch
-            #     count = -1
-            # end
-            if κ[s][a] != 1 # || count > 20
+            if κ[s][a] != 1 && nrow(D_full[string(action.value)]) > 30
                 continue
             end
 
@@ -107,7 +99,7 @@ function update_autonomy_profile!(C, ℒ)
             #     println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
             # end
 
-            println("Updated autonomy profile: ($s, $a) || $(L[i])")
+            # println("Updated autonomy profile: ($s, $a) || $(L[i])")
 
             C.𝒮.A.κ[s][a] = L[i]
             C.potential[s][a][L[i]+1] = 0.0
@@ -125,20 +117,21 @@ function competence(state::DomainState,
         return -1
     end
 
-    # Peron 3
-    if wstate.waiting || (action.value != :go && state.priority) || (action.value == :stop)
-        return 0
-    else
-        return 2
-    end
+    # Peron 3 (Rush)
+    # if wstate.waiting || (action.value != :go && state.priority) || (action.value == :stop)
+    #     return 0
+    # else
+    #     return 2
+    # end
 
-    # Person 2
-    if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
-        return 0
-    else
-        return 2
-    end
-
+    # Person 2 (Untrusting)
+    # if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
+    #     return 0
+    # else
+    #     return 2
+    # end
+    #
+    # Person 1 (Conscientious)
     if wstate.trailing && (wstate.waiting || action.value == :stop)
         return 0
     else
@@ -146,25 +139,25 @@ function competence(state::DomainState,
     end
 
     if action.value == :stop
-        if state.position > 1 || (state.oncoming < 1 && wstate.trailing)
+        if state.position > 1# || (state.oncoming < 1 && wstate.trailing)
             return 0
         else
             return 2
         end
     elseif action.value == :edge
-        if state.position == 0 && wstate.waiting && wstate.trailing && wstate.weather == "rainy" && wstate.time == "night"
-            return 0
-        elseif state.position > 0 # || (wstate.waiting && wstate.trailing)
+        # if state.position == 0 && wstate.waiting && wstate.trailing && wstate.weather == "rainy" && wstate.time == "night"
+        #     return 0
+        if state.position > 0 || (wstate.waiting && wstate.trailing)
             return 0
         else
             return 2
         end
     else
-        if wstate.weather == "rainy" && wstate.time == "night"
+        # if wstate.weather == "rainy" && wstate.time == "night"
+        #     return 0
+        if state.oncoming == -1 || (state.position == 0 && state.oncoming == 1 && (wstate.weather == "rainy" || wstate.time == "night"))
             return 0
-        elseif state.oncoming == -1 || (state.position == 0 && state.oncoming == 1 && (wstate.weather == "rainy" || wstate.time == "night"))
-            return 0
-        elseif state.oncoming == -1 || (state.oncoming > 1 && !state.priority)
+        elseif state.oncoming > 1 && !state.priority
             return 0 # 1
         else
             return 2
@@ -184,7 +177,7 @@ function autonomy_cost(state::CASstate)
     if state.σ == '∅'
         return 0.0
     elseif state.σ == '⊘'
-        return 3.5
+        return 10.0
     end
 end
 ##
@@ -251,7 +244,7 @@ function update_feedback_profile!(C)
         X, Y, RF = nothing, nothing, nothing
         try
             X, Y = split_data(D[string(action.value)])
-            RF = build_forest(Y, X, -1, 10, 0.7, -1)
+            RF = build_forest(Y, X, -1, 11, 0.7, -1)
         catch
             continue
         end
@@ -293,7 +286,7 @@ function save_full_data(D)
 end
 
 function human_cost(action::CASaction)
-    return [5.0 0.5 0.0][action.l+1]
+    return [10.0 1.0 0.0][action.l+1]
 end
 
 function find_candidates(C, δ=0.05, threshold=7)
@@ -351,7 +344,7 @@ function get_discriminator(C, candidate, k)
 
     _disc = Dict()
     for f in inactive_features
-        _disc[f] = mRMR(D_full[!, f], D_full[!, :σ])
+        _disc[f] = abs(mRMR(D_full[!, f], D_full[!, :σ]))
     end
 
     discriminators = sort(collect(_disc), by = x->x[2])
@@ -557,51 +550,50 @@ function generate_feedback(state::DomainState,
     if state.position == 4
         return '∅'
     end
-    if rand() <= 0.1
-        return ['∅', '⊘'][rand(1:2)]
-    end
+    # if rand() <= 0.1
+    #     return ['∅', '⊘'][rand(1:2)]
+    # end
 
-    # Person 2
+    # Person 2 (Untrusting)
     # if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
     #     return '⊘'
     # else
     #     return '∅'
     # end
 
-    # Person 1
-    # if wstate.trailing && (wstate.waiting || action.value == :stop)
-    #     return '⊘'
-    # else
-    #     return '∅'
-    # end
-
-    # Person 3
-    if wstate.waiting || (action.value != :go && state.priority) || (action.value == :stop)
+    # Person 1 (Conscientious)
+    if wstate.trailing && (wstate.waiting || action.value == :stop)
         return '⊘'
     else
         return '∅'
     end
 
+    # Person 3 (Rush)
+    # if wstate.waiting || (action.value != :go && state.priority) || (action.value == :stop)
+    #     return '⊘'
+    # else
+    #     return '∅'
+    # end
+
     if action.value == :stop
-        if state.position > 1
+        if state.position > 1# || (state.oncoming < 1 && wstate.trailing)
             return '⊘'
         else
             return '∅'
         end
     elseif action.value == :edge
-        if state.position == 0 && wstate.waiting && wstate.trailing && wstate.weather == "rainy" && wstate.time == "night"
-            return '⊘'
-        elseif state.position > 0 #|| (wstate.waiting && wstate.trailing)
+        # if state.position == 0 && wstate.waiting && wstate.trailing && wstate.weather == "rainy" && wstate.time == "night"
+        if state.position > 0 || (wstate.waiting && wstate.trailing)
             return '⊘'
         else
             return '∅'
         end
     else
-        if wstate.weather == "rainy" && wstate.time == "night"
+        # if wstate.weather == "rainy" && wstate.time == "night"
+        #     return '⊘'
+        if state.oncoming == -1 || (state.position == 0 && state.oncoming >= 1 && (wstate.weather == "rainy" || wstate.time == "night"))
             return '⊘'
-        elseif state.oncoming == -1 || (state.position == 0 && state.oncoming >= 1 && (wstate.weather == "rainy" || wstate.time == "night"))
-            return '⊘'
-        elseif state.oncoming == -1 || (state.oncoming > 1 && !state.priority)
+        elseif state.oncoming > 1 && !state.priority
             return '⊘'
         else
             return '∅'
@@ -636,6 +628,10 @@ function compute_level_optimality(C, ℒ)
         set_world_state!(C.𝒮.W, w)
         for (s, state) in enumerate(C.S)
             if terminal(C, state) || state.state.position == -1
+                continue
+            end
+            if !isequal(state.state.ISR, Tuple([getproperty(w, f)
+                    for f in C.𝒮.D.F_active if hasproperty(w, f)]))
                 continue
             end
             solve(ℒ, C, s)
