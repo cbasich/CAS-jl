@@ -8,22 +8,17 @@ include("../LAOStarSolver.jl")
 struct DomainState
     position::Int
     oncoming::Int
-    trailing::Bool
-    dynamic::Bool
     priority::Bool
 end
 
 function ==(a::DomainState, b::DomainState)
     return (isequal(a.position, b.position)
-            && isequal(a.oncoming, b.oncoming) && isequal(a.trailing, b.trailing)
-            && isequal(a.dynamic, b.dynamic) && isequal(a.priority, b.priority))
+         && isequal(a.oncoming, b.oncoming) && isequal(a.priority, b.priority))
 end
 
 function Base.hash(a::DomainState, h::UInt)
     h = hash(a.position, h)
     h = hash(a.oncoming, h)
-    h = hash(a.trailing, h)
-    h = hash(a.dynamic, h)
     h = hash(a.priority, h)
     return h
 end
@@ -88,21 +83,17 @@ function generate_states()
             if pos < 1 && o != -1
                 continue
             end
-            for t in [false, true]
-                for d in [false, true]
-                    for p in [false, true]
-                        state = DomainState(pos, o, t, d, p)
-                        push!(S, state)
-                        if pos == 4
-                            push!(G, state)
-                        end
-                    end
+            for p in [false, true]
+                state = DomainState(pos, o, p)
+                push!(S, state)
+                if pos == 4
+                    push!(G, state)
                 end
             end
         end
     end
 
-    push!(S, DomainState(-1, -1, false, false, false))
+    push!(S, DomainState(-1, -1, false))
     return S, G
 end
 
@@ -132,14 +123,14 @@ function generate_transitions!(M::DomainSSP)
             continue
         end
         if ( 2 <= state.position <= 3) && state.oncoming == 3
-            state′ = DomainState(-1, -1, false, false, false)
+            state′ = DomainState(-1, -1, false)
             for (a, action) in enumerate(A)
                 T[s][a] = [(M.SIndex[state′], 1.0)]
             end
             continue
         end
         if state.position == -1
-            state′ = DomainState(4, 0, false, false, false)
+            state′ = DomainState(4, 0, false)
             for (a, action) in enumerate(A)
                 T[s][a] = [(M.SIndex[state′], 1.0)]
             end
@@ -151,12 +142,12 @@ function generate_transitions!(M::DomainSSP)
             mass = 0.0
             for (sp, state′) in enumerate(S)
                 # Impossibilities
-                if state′.dynamic != state.dynamic
-                    continue
-                end
-                if state.trailing && !state′.trailing
-                    continue
-                end
+                # if state′.dynamic != state.dynamic
+                #     continue
+                # end
+                # if state.trailing && !state′.trailing
+                #     continue
+                # end
                 if action.value == :stop && state.position != state′.position
                     continue
                 end
@@ -185,13 +176,13 @@ function generate_transitions!(M::DomainSSP)
                 p = 1.0
 
                 # Trailing dynamics
-                if state.trailing == state′.trailing == false
-                    p *= 0.8
-                elseif !state.trailing && state′.trailing
-                    p *= 0.2
-                elseif state.trailing == state′.trailing == true
-                    p *= 1.0
-                end
+                # if state.trailing == state′.trailing == false
+                #     p *= 0.8
+                # elseif !state.trailing && state′.trailing
+                #     p *= 0.2
+                # elseif state.trailing == state′.trailing == true
+                #     p *= 1.0
+                # end
 
                 # position dynamics
                 if action.value == :edge
@@ -322,7 +313,7 @@ end
 
 function build_model()
     S, goals = generate_states()
-    s₀ = DomainState(0, -1, false, false, false)
+    s₀ = DomainState(0, -1, false)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     M = DomainSSP(S, A, T, generate_costs, s₀, goals)

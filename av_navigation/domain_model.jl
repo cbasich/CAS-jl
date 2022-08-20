@@ -417,10 +417,19 @@ function generate_costs(M::DomainSSP, s::Int, a::Int)
     elseif M.T[s][a] == (s, 1.0)
         return 100.0
     else
+        # if typeof(M.S[s]) == NodeState
+        #     return 1.0
+        # else
+        #     return 0.1
+        # end
         if typeof(M.S[s]) == NodeState
-            return 1.0
+            if M.A[a] == '⤉'
+                return 1.0
+            else
+                return 10.0
+            end
         else
-            return 0.1
+            return 1.0
         end
     end
 end

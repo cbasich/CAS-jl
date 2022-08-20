@@ -243,3 +243,17 @@ function update_world_state!(wstate, state, action, state′)
     end
     # wstate = wstate′
 end
+
+function smooth_data(x,w)
+    smoothed = []
+    for i=6:length(x)
+        trunc_data = x[1:i]
+        if i < w+1
+            append!(smoothed, mean(x[1:i]))
+        else
+            window = trunc_data[end-w:end]
+            append!(smoothed, mean(window))
+        end
+    end
+    return smoothed
+end

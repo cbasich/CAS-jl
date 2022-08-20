@@ -132,13 +132,13 @@ function competence(state::DomainState,
         return -1
     end
     if action.value == :stop
-        if state.position > 1 || (state.oncoming < 1 && state.trailing)
+        if state.position > 1 || state.oncoming < 1
             return 0
         else
             return 2
         end
     elseif action.value == :edge
-        if state.position > 0 && state.trailing
+        if state.position > 0
             return 0
         else
             return 2
@@ -199,7 +199,7 @@ function save_autonomy_profile(κ)
     # jldopen("params.jld", "w") do file
     #     write(file, "κ", κ)
     # end
-    save(joinpath(abspath(@__DIR__), "params.jld"), "κ", κ)
+    save_object(joinpath(abspath(@__DIR__), "params.jld"), κ)
 end
 
 function load_autonomy_profile()
@@ -207,14 +207,14 @@ function load_autonomy_profile()
     #     read(file, "κ")
     # end
     # return κ
-    return load(joinpath(abspath(@__DIR__), "params.jld"), "κ")
+    return load_object(joinpath(abspath(@__DIR__), "params.jld"))
 end
 
 function autonomy_cost(state::CASstate)
     if state.σ == '∅'
         return 0.0
     elseif state.σ == '⊘'
-        return 3.5
+        return 10.0
     end
 end
 ##
@@ -228,7 +228,7 @@ struct FeedbackModel
 end
 
 function get_state_features(state::DomainState)
-    x = [state.position state.oncoming state.trailing state.priority]
+    x = [state.position state.oncoming state.priority]
     return x
 end
 
@@ -245,20 +245,20 @@ function generate_feedback_profile(𝒟::DomainSSP,
                                                    for a=1:length(A))
                                                    for s=1:length(S))
     # λ = Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}()
-    for (a, action) in enumerate(A)
-        X, Y = split_data(D[string(action.value)])
-        M = build_forest(Y, X, 2, 10, 0.5, 8)
-        for (s, state) in enumerate(S)
-            if state.position == -1
-                λ[s][a] = Dict(1 => Dict('∅' => 1.0, '⊘' => 0.0))
-                continue
-            end
-            f = get_state_features(state)
-            pred = apply_forest_proba(M, f, [0,1])
-            λ[s][a][1]['⊘'] = pred[1]
-            λ[s][a][1]['∅'] = pred[2]
-        end
-    end
+    # for (a, action) in enumerate(A)
+    #     X, Y = split_data(D[string(action.value)])
+    #     M = build_forest(Y, X, -1, 11, 0.7, -1)
+    #     for (s, state) in enumerate(S)
+    #         if state.position == -1
+    #             λ[s][a] = Dict(1 => Dict('∅' => 1.0, '⊘' => 0.0))
+    #             continue
+    #         end
+    #         f = get_state_features(state)
+    #         pred = apply_forest_proba(M, f, [0,1])
+    #         λ[s][a][1]['⊘'] = pred[1]
+    #         λ[s][a][1]['∅'] = pred[2]
+    #     end
+    # end
     # for (s, state) in enumerate(𝒟.S)
     #     λ[s] = Dict{Int, Dict{Int, Dict{Char, Float64}}}()
     #     if state.position == -1
@@ -310,7 +310,7 @@ function update_feedback_profile!(C)
     S, A = 𝒟.S, 𝒟.A
     for (a, action) in enumerate(A)
         X, Y = split_data(D[string(action.value)])
-        M = build_forest(Y, X, 2, 10, 0.5, 8)
+        M = build_forest(Y, X, -1, 11, 0.7, -1)
         for (s, state) in enumerate(S)
             if state.position == -1
                 continue
@@ -355,11 +355,11 @@ function update_feedback_profile!(C)
 end
 
 function save_feedback_profile(λ)
-    save(joinpath(abspath(@__DIR__),"params.jld"), "λ", λ)
+    save_object(joinpath(abspath(@__DIR__),"params.jld"), λ)
 end
 
 function load_feedback_profile()
-    return load(joinpath(abspath(@__DIR__), "params.jld", "λ"))
+    return load_object(joinpath(abspath(@__DIR__), "params.jld"))
 end
 
 function save_data(D)
@@ -369,7 +369,7 @@ function save_data(D)
 end
 
 function human_cost(action::CASaction)
-    return [5.0 0.5 0.0][action.l+1]
+    return [10.0 1.0 0.0][action.l+1] # [5.0 0.5 0.0][action.l+1]
 end
 ##
 
@@ -492,19 +492,21 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             T[s][a] = Vector{Tuple{Int, Float64}}()
             if action.l == 0
                 # T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 2 + 2 , 1.0)]
-                state′ = CASstate(DomainState(4, 0, 0, state.state.dynamic, 0), '∅')
+                state′ = CASstate(DomainState(4, 0, 0), '∅')
                 push!(T[s][a], (C.SIndex[state′], 1.0))
             elseif action.l == 1
                 p_override = ℱ.λ[base_s][base_a][1]['⊘']
                 p_null = 1.0 - p_override
-                state′ = CASstate(DomainState(4, 0, 0, state.state.dynamic, 0), '⊘')
+                state′ = CASstate(DomainState(4, 0, 0), '⊘')
                 push!(T[s][a], (C.SIndex[state′], p_override))
                 for (sp, p) in t
-                    push!(T[s][a], ((sp-1) * 2 + 2, p * p_null))
+                    # push!(T[s][a], ((sp-1) * 2 + 2, p * p_null))
+                    push!(T[s][a], ((sp-1) * 2 + 1, p * p_null))
                 end
             else
                 for (sp, p) in t
-                    push!(T[s][a], ((sp-1) * 2 + 2, p))
+                    # push!(T[s][a], ((sp-1) * 2 + 2, p))
+                    push!(T[s][a], ((sp-1) * 2 + 1, p))
                 end
             end
         end
@@ -561,7 +563,7 @@ end
 
 function generate_feedback(state::DomainState,
                           action::DomainAction)
-    if rand() <= 0.1
+    if rand() <= 0.9
         return ['∅', '⊘'][rand(1:2)]
     end
     if state.position == 4
@@ -569,13 +571,13 @@ function generate_feedback(state::DomainState,
     end
 
     if action.value == :stop
-        if state.position > 1 || (state.oncoming < 1 && state.trailing)
+        if state.position > 1 || state.oncoming < 1
             return '⊘'
         else
             return '∅'
         end
     elseif action.value == :edge
-        if state.position > 0 && state.trailing
+        if state.position > 0
             return '⊘'
         else
             return '∅'

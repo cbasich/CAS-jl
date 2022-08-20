@@ -15,7 +15,7 @@ using Plots
 using DecisionTree
 using DataFrames
 using CSV
-using JLD
+using JLD2
 using StatsBase
 
 include("domain_model.jl")
@@ -44,6 +44,7 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
+            # κ[s][a] = 2
             if typeof(state) == EdgeState && action.value == '↑'
                 κ[s][a] = 3
             else
@@ -200,20 +201,22 @@ function competence(state::DomainState,
 end
 
 function save_autonomy_profile(κ)
-    save(joinpath(abspath(@__DIR__),"params.jld"), "κ", κ)
+    # JLD2.save(joinpath(abspath(@__DIR__),"params.jld2"), "κ", κ)
+    save_object(joinpath(abspath(@__DIR__),"params.jld2"), κ)
 end
 
 function load_autonomy_profile()
-    return load(joinpath(abspath(@__DIR__), "params.jld"), "κ")
+    # return load(joinpath(abspath(@__DIR__), "params.jld2"), "κ")
+    return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
 end
 
 function autonomy_cost(state::CASstate)
     if state.σ == '⊕' || state.σ == '∅'
         return 0.0
     elseif state.σ == '⊖'
-        return 1.0
+        return 3.0 #1.0
     elseif state.σ == '⊘'
-        return 3.5
+        return 10.0 #3.5
     end
 end
 ##
@@ -251,13 +254,13 @@ function generate_feedback_profile(𝒟::DomainSSP,
     for (a, action) in enumerate(A)
         X_n, Y_n = split_data(D["node"][string(action.value)])
         # M_n = DecisionTreeClassifier(max_depth=8)
-        M_n = build_forest(Y_n, X_n, 2, 10, 0.5, 8)
+        M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
         # DecisionTree.fit!(M_n, X_n, Y_n)
         if action.value ∈ ['↑', '⤉']
             X_e, Y_e = split_data(D["edge"][string(action.value)])
             # M_e = DecisionTreeClassifier(max_depth=8)
             # DecisionTree.fit!(M_e, X_e, Y_e)
-            M_e = build_forest(Y_e, X_e, 2, 10, 0.5, 8)
+            M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
         end
 
         for (s, state) in enumerate(S)
@@ -293,12 +296,12 @@ function update_feedback_profile!(C)
         X_n, Y_n = split_data(D["node"][string(action.value)])
         # M_n = DecisionTreeClassifier(max_depth=8)
         # DecisionTree.fit!(M_n, X_n, Y_n)
-        M_n = build_forest(Y_n, X_n, 2, 10, 0.5, 8)
+        M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
         if action.value ∈ ['↑', '⤉']
             X_e, Y_e = split_data(D["edge"][string(action.value)])
             # M_e = DecisionTreeClassifier(max_depth=8)
             # DecisionTree.fit!(M_e, X_e, Y_e)
-            M_e = build_forest(Y_e, X_e, 2, 10, 0.5, 8)
+            M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
         end
 
         for (s, state) in enumerate(S)
@@ -404,11 +407,13 @@ end
 # end
 
 function save_feedback_profile(λ)
-    save(joinpath(abspath(@__DIR__),"params.jld"), "λ", λ)
+    # JLD2.save(joinpath(abspath(@__DIR__),"params.jld2"), "λ", λ)
+    save_object(joinpath(abspath(@__DIR__),"params.jld2"), λ)
 end
 
 function load_feedback_profile()
-    return load(joinpath(abspath(@__DIR__), "params.jld", "λ"))
+    # return load(joinpath(abspath(@__DIR__), "params.jld2", "λ"))
+    return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
 end
 
 function save_data(D)
@@ -421,7 +426,7 @@ function save_data(D)
 end
 
 function human_cost(action::CASaction)
-    return [5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
+    return [10.0 2.0 1.0 0.][action.l + 1]#[5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
 end
 ##
 
@@ -624,8 +629,14 @@ function generate_costs(C::CASSP,
 end
 
 function generate_feedback(state::CASstate,
-                          action::CASaction)
-    if rand() <= 0.1
+                          action::CASaction,
+                               ϵ::Float64)
+
+    if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
+      return (action.l == 1) ? '⊕' : '∅'
+    end
+
+    if rand() < 1-ϵ
         if action.l == 1
             return ['⊕', '⊖'][rand(1:2)]
         elseif action.l == 2
@@ -754,7 +765,7 @@ function build_cas(𝒟::DomainSSP,
         D["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "edge_$a.csv")))
     end
     λ = generate_feedback_profile(𝒟, Σ, L, D)
-    ℱ = FeedbackModel(Σ, λ, human_cost, D, 0.65)
+    ℱ = FeedbackModel(Σ, λ, human_cost, D, 0.9)
     𝒮 = CAS(𝒟, 𝒜, ℱ)
     S, s₀, G = generate_states(𝒟, ℱ)
     A = generate_actions(𝒟, 𝒜)
@@ -767,7 +778,7 @@ function build_cas(𝒟::DomainSSP,
 end
 
 function solve_model(C::CASSP)
-    ℒ = LRTDPsolver(C, 10000., 1000, .001, Dict{Int, Int}(),
+    ℒ = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
                      false, Set{Int}(), zeros(length(C.S)),
                                         zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])

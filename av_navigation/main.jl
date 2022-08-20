@@ -1,4 +1,4 @@
-using Profile,ProfileView
+using Profile,ProfileView,JLD2
 include("../utils.jl")
 include("competence_aware_system.jl")
 include("../LRTDPsolver.jl")
@@ -23,7 +23,7 @@ function simulate(M::DomainSSP, C::CASSP, L, m)
             actions_taken += 1
             actions_at_competence += (2 == competence(state, action))
             # println("$i   |   Taking action $action in state $state.")
-            σ = generate_feedback(CASstate(state, '∅'), CASaction(action, 2))
+            σ = generate_feedback(CASstate(state, '∅'), CASaction(action, 2), C.𝒮.F.ϵ)
             episode_cost += C.C(C, C.SIndex[CASstate(state, σ)], C.AIndex[CASaction(action, 2)])
 
             if σ == '⊘'
@@ -76,7 +76,7 @@ function simulate(M::CASSP, L, m)
             if action.l == 0 || action.l == 3
                 σ = '∅'
             elseif action.l == 1
-                σ = generate_feedback(state, action)
+                σ = generate_feedback(state, action, M.𝒮.F.ϵ)
                 if i == m
                     y = (σ == '⊕') ? 1 : 0
                     d = hcat(get_state_features(state.state), 1, y)
@@ -89,7 +89,7 @@ function simulate(M::CASSP, L, m)
                     end
                 end
             elseif action.l == 2 #|| (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
-                σ = generate_feedback(state, action)
+                σ = generate_feedback(state, action, M.𝒮.F.ϵ)
                 if i == m
                     y = (σ == '∅') ? 1 : 0
                     d = hcat(get_state_features(state.state), 2, y)
@@ -124,7 +124,7 @@ function simulate(M::CASSP, L, m)
                 state = generate_successor(M.𝒮.D, state, action, σ)
             end
             # println(σ, "     | succ state |      ", state)
-            if terminal(M, state) || episode_cost > 100.0
+            if terminal(M, state) #|| episode_cost > 100.0
                 break
             end
         end
@@ -143,6 +143,7 @@ function run_episodes(M, C)
     # Tracking information
     los, los_r = Vector{Float64}(), Vector{Float64}()
     costs, costs2 = Vector{Float64}(), Vector{Float64}()
+    mean_costs, mean_costs2 = Vector{Float64}(), Vector{Float64}()
     stds, stds2 = Vector{Float64}(), Vector{Float64}()
     cost_errors, cost_errors2 = Vector{Float64}(), Vector{Float64}()
     fixed_task_costs, fixed_task_costs2 = Vector{Float64}(), Vector{Float64}()
@@ -154,7 +155,7 @@ function run_episodes(M, C)
     total_signals_received, total_signals_received2 = 0, 0
     expected_task_costs = Vector{Float64}()
     results = []
-    for i=1:500
+    for i=1:1000
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         set_route(M, C, init, goal)
@@ -165,11 +166,12 @@ function run_episodes(M, C)
 
         println(i, "  |  Task: ", route)
         ℒ = solve_model(C)
-        push!(expected_task_costs, ℒ.V[C.SIndex[C.s₀]])
+        push!(mean_costs, ℒ.V[C.SIndex[C.s₀]])
         c, std, signal_count, percent_lo, error = simulate(C, ℒ, 10)
         total_signals_received += signal_count
 
         ℒ2 = solve_model(M)
+        push!(mean_costs2, ℒ2.V[M.SIndex[M.s₀]])
         c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, ℒ2, 10)
         total_signals_received2 += signal_count2
 
@@ -195,15 +197,15 @@ function run_episodes(M, C)
             push!(signal_counts_per_10_2, total_signals_received2)
 
             # Fixed route results
-            # set_route(M, C, 12, 7)
-            # generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-            # L = solve_model(C)
-            # push!(expected_task_costs, L.V[C.SIndex[C.s₀]])
-            # L2 = solve_model(M)
-            # c, std, signal_count, percent_lo, error = simulate(C, L, 100)
-            # c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, L2, 100)
-            # push!(fixed_task_costs, c)
-            # push!(fixed_task_costs2, c2)
+            set_route(M, C, 12, 7)
+            generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+            L = solve_model(C)
+            push!(expected_task_costs, L.V[C.SIndex[C.s₀]])
+            L2 = solve_model(M)
+            c, std, signal_count, percent_lo, error = simulate(C, L, 100)
+            c2, std2, signal_count2, percent_lo2, error2 = simulate(M, C, L2, 100)
+            push!(fixed_task_costs, c)
+            push!(fixed_task_costs2, c2)
         end
 
         # if i == 1 || i%100 == 0
@@ -230,11 +232,13 @@ function run_episodes(M, C)
         # generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
         # set_consistency(C.𝒮.F, min(1.0, C.𝒮.F.ϵ+0.01))
 
-        # results = [costs, costs2, stds, stds2, expected_task_costs, cost_errors, cost_errors2, los, los_r, lo_function_of_signal_count, lo_function_of_signal_count2, signal_counts, signal_counts2, fixed_task_costs, fixed_task_costs2, route_records]
+        # results = [costs, costs2, stds, stds2, expected_task_costs, cost_errors, cost_errors2, los, los_r, lo_function_of_signal_count, lo_function_of_signal_count2, signal_counts, signal_counts2, route_records]
 
-        results = [costs, stds, expected_task_costs, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, signal_counts2]
+        results = [costs, costs2, stds, expected_task_costs, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, signal_counts2, fixed_task_costs, fixed_task_costs2]
 
-        save(joinpath(abspath(@__DIR__), "results.jld"), "results", results)
+        # jldsave(joinpath(abspath(@__DIR__), "results.jld2"); results)
+        save_object(joinpath(abspath(@__DIR__), "results.jld2"), results)
+
 
         x = signal_counts
         los_a = [v[2] for v in lo_function_of_signal_count]
@@ -252,15 +256,16 @@ function run_episodes(M, C)
         # g3 = scatter(x, [stds stds2], xlabel="Signals Received", ylabel="Reliability", label = ["CAS" "No CAS"])
         # savefig(g3, joinpath(abspath(@__DIR__), "plots", "standard_devs.png"))
 
-        # g4 = scatter(signal_counts_per_10, [fixed_task_costs fixed_task_costs2], xlabel="Episode", ylabel="Average Cost to Goal", label = ["CAS" "No CAS"])
-        # savefig(g4, joinpath(abspath(@__DIR__), "plots", "fixed_task_costs.png"))
+        g4 = scatter(signal_counts_per_10, [fixed_task_costs fixed_task_costs2], xlabel="Signal Count", ylabel="Average Cost to Goal", label = ["CAS" "No CAS"])
+        savefig(g4, joinpath(abspath(@__DIR__), "plots", "fixed_task_costs.png"))
 
         # task_errors = 100.0 .* ((costs .- expected_task_costs)./costs)
         # g5 = plot(task_errors, xlabel="Episode", ylabel="% Error")
         # savefig(g5, joinpath(abspath(@__DIR__), "plots", "cost_errors.png"))
     end
     save_autonomy_profile(C.𝒮.A.κ)
-    save(joinpath(abspath(@__DIR__), "override_records.jld"), "override_records", override_rate_records)
+    # JLD2.save(joinpath(abspath(@__DIR__), "override_records.jld2"), "override_records", override_rate_records)
+    save_object(joinpath(abspath(@__DIR__), "override_records.jld2"), override_rate_records)
 
     println(costs)
     println(stds)
@@ -285,7 +290,42 @@ C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
 # L2 = LRTDPsolver(M, 10000., 100, .001, Dict{Int, Int}(),
                  # false, Set{Int}(), zeros(length(M.S)), zeros(length(M.A)))
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
-@profile results = run_episodes(M, C)
+results = run_episodes(M, C)
+results = load_object(joinpath(abspath(@__DIR__), "experiment_7_21_22", "eps100", "results.jld2"))
+los_a = results[5]
+los_r = results[6]
+# los_v = [x[2] for x in results[7]]
+# los_v = append!([los_v[1]], los_v[10:10:end])
+signal_count = results[8]
+signal_count = append!([signal_count[1]], signal_count[10:10:end])
+
+
+savefig(scatter(signal_count, [los_a los_r],
+             xlims=[0, 80], ylims=[0, 1.0], legend=:bottomright,
+             xlabel="Signals Received", ylabel="Level Optimality",
+             label=["All States" "Reachable" "Visited"]),
+             joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count_eps100.png"))
+
+savefig(plot([results[8][1:100] results[9][1:100]],
+             xlims=[0, 100], ylims=[0, 1000], legend=:topleft,
+             xlabel="Episode", ylabel="Signals Received", label=["CAS" "No CAS"]),
+             joinpath(abspath(@__DIR__), "plots", "signal_count_comparison_eps100.png"))
+
+savefig(plot([results[10][1:100] .- results[11][1:100]],
+            legend=:topleft,
+            xlabel="Episode", ylabel="Average Cost", label=["CAS" "No CAS"]),
+            joinpath(abspath(@__DIR__), "plots", "avg_cost_comp_eps100.png"))
+
+exp_cost = results[3][12:11:end]
+exp_cost = append!([results[3][2]], exp_cost)
+savefig(scatter(signal_count, results[4], xlabel="Signals Received", ylabel="Expected Cost", label="", size=(600,400)),
+            joinpath(abspath(@__DIR__), "plots", "expected_cost_eps90.png"))
+
+savefig(scatter(signal_count, [results[11] results[12]],
+                xlabel="Signals Received", ylabel="Avergage Cost",
+                labels=["CAS" "No CAS"], size=(600,400)),
+                joinpath(abspath(@__DIR__), "plots", "cost_comparison90.png"))
+
 results2 = run_episodes(M, C)
 simulate(M, L2, 10)
 L = solve_model(C)
@@ -298,12 +338,13 @@ for a in ["↑", "→", "↓", "←", "⤉"]
     D["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "node_$a.csv")))
 end
 
-results = load(joinpath(abspath(@__DIR__), "data_eps+", "results.jld"), "results")
-signal_counts_per_10 = cat(results[12][1], results[12][10:10:end], dims=1)
-savefig(scatter(signal_counts_per_10, [results[8] results[9]],
+results2 = @load joinpath(abspath(@__DIR__), "results.jld2") results
+# results2 = load(joinpath(abspath(@__DIR__), "results.jld"), "results")
+signal_counts_per_10 = cat(results[7][1], results[7][10:10:end], dims=1)
+savefig(scatter(signal_counts_per_10, [results[5] results[6]],
         xlims=[0, 250], ylims=[0, 1.0], legend=:topleft,
         xlabel="Signal Count", ylabel="Level-Optimality", label=["All States" "Reachable"]),
-        joinpath(abspath(@__DIR__), "data_eps+", "plots", "level_optimality_by_signal_count_eps+.png"))
+        joinpath(abspath(@__DIR__), "eps100_newestcost2", "plots", "level_optimality_by_signal_count_eps+.png"))
 
 
 routes = last(results)

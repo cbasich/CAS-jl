@@ -86,7 +86,7 @@ function update_autonomy_profile!(C, ℒ)
                     continue
                 end
             elseif L[i] == 0
-                if C.𝒮.F.λ[s][a][1]['∅'] > 0.05
+                if C.𝒮.F.λ[s][a][1]['∅'] > 0.15
                     C.potential[s][a][L[i]+1] = 0.0
                     continue
                 end
@@ -125,21 +125,21 @@ function competence(state::DomainState,
     # end
 
     # Person 2 (Untrusting)
-    # if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
-    #     return 0
-    # else
-    #     return 2
-    # end
-    #
-    # Person 1 (Conscientious)
-    if wstate.trailing && (wstate.waiting || action.value == :stop)
+    if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
         return 0
     else
         return 2
     end
+    #
+    # Person 1 (Conscientious)
+    # if wstate.trailing && (wstate.waiting || action.value == :stop)
+    #     return 0
+    # else
+    #     return 2
+    # end
 
     if action.value == :stop
-        if state.position > 1# || (state.oncoming < 1 && wstate.trailing)
+        if state.position > 1 || state.oncoming < 1
             return 0
         else
             return 2
@@ -147,7 +147,7 @@ function competence(state::DomainState,
     elseif action.value == :edge
         # if state.position == 0 && wstate.waiting && wstate.trailing && wstate.weather == "rainy" && wstate.time == "night"
         #     return 0
-        if state.position > 0 || (wstate.waiting && wstate.trailing)
+        if state.position > 0 #|| (wstate.waiting && wstate.trailing)
             return 0
         else
             return 2
@@ -166,11 +166,11 @@ function competence(state::DomainState,
 end
 
 function save_autonomy_profile(κ)
-    save(joinpath(abspath(@__DIR__), "params.jld"), "κ", κ)
+    save_object(joinpath(abspath(@__DIR__), "params.jld"), κ)
 end
 
 function load_autonomy_profile()
-    return load(joinpath(abspath(@__DIR__), "params.jld"), "κ")
+    return load_object(joinpath(abspath(@__DIR__), "params.jld"))
 end
 
 function autonomy_cost(state::CASstate)
@@ -266,11 +266,11 @@ function update_feedback_profile!(C)
 end
 
 function save_feedback_profile(λ)
-    save(joinpath(abspath(@__DIR__),"params.jld"), "λ", λ)
+    save_object(joinpath(abspath(@__DIR__),"params.jld"), λ)
 end
 
 function load_feedback_profile()
-    return load(joinpath(abspath(@__DIR__), "params.jld", "λ"))
+    return load_object(joinpath(abspath(@__DIR__), "params.jld"))
 end
 
 function save_data(D)
@@ -550,23 +550,23 @@ function generate_feedback(state::DomainState,
     if state.position == 4
         return '∅'
     end
-    # if rand() <= 0.1
-    #     return ['∅', '⊘'][rand(1:2)]
-    # end
+    if rand() <= 0.05
+        return ['∅', '⊘'][rand(1:2)]
+    end
 
     # Person 2 (Untrusting)
-    # if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
-    #     return '⊘'
-    # else
-    #     return '∅'
-    # end
-
-    # Person 1 (Conscientious)
-    if wstate.trailing && (wstate.waiting || action.value == :stop)
+    if wstate.weather == "snowy" || (wstate.weather == "rainy" && wstate.time == "night")
         return '⊘'
     else
         return '∅'
     end
+
+    # Person 1 (Conscientious)
+    # if wstate.trailing && (wstate.waiting || action.value == :stop)
+    #     return '⊘'
+    # else
+    #     return '∅'
+    # end
 
     # Person 3 (Rush)
     # if wstate.waiting || (action.value != :go && state.priority) || (action.value == :stop)
@@ -576,14 +576,14 @@ function generate_feedback(state::DomainState,
     # end
 
     if action.value == :stop
-        if state.position > 1# || (state.oncoming < 1 && wstate.trailing)
+        if state.position > 1 || state.oncoming < 1
             return '⊘'
         else
             return '∅'
         end
     elseif action.value == :edge
         # if state.position == 0 && wstate.waiting && wstate.trailing && wstate.weather == "rainy" && wstate.time == "night"
-        if state.position > 0 || (wstate.waiting && wstate.trailing)
+        if state.position > 0 #|| (wstate.waiting && wstate.trailing)
             return '⊘'
         else
             return '∅'
@@ -591,7 +591,9 @@ function generate_feedback(state::DomainState,
     else
         # if wstate.weather == "rainy" && wstate.time == "night"
         #     return '⊘'
-        if state.oncoming == -1 || (state.position == 0 && state.oncoming >= 1 && (wstate.weather == "rainy" || wstate.time == "night"))
+        # if state.oncoming == -1 || (state.position == 0 && state.oncoming >= 1) # && (wstate.weather == "rainy" || wstate.time == "night"))
+        #     return '⊘'
+        if state.oncoming == -1 || (state.position == 0 && state.oncoming == 1 && (wstate.weather == "rainy" || wstate.time == "night"))
             return '⊘'
         elseif state.oncoming > 1 && !state.priority
             return '⊘'

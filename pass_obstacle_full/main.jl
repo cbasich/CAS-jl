@@ -1,4 +1,4 @@
-using Profile,ProfileView
+using Profile,ProfileView,JLD2
 include("../utils.jl")
 include("competence_aware_system.jl")
 include("../LRTDPsolver.jl")
@@ -131,7 +131,7 @@ function run_episodes(M, C, L)
     # override_rate_records_by_ep = Vector{Dict{DomainState, Array{Int}}}()
     total_signals_received = 0
     results = []
-    for i=1:500
+    for i=1:1000
         println(i)
         set_random_world_state!(C.𝒮.W)
         M.s₀ = DomainState(0, -1, false, Tuple([getproperty(C.𝒮.W, f)
@@ -162,30 +162,30 @@ function run_episodes(M, C, L)
             # for (a, data) in C.𝒮.F.D
             #     record_data(data,joinpath(abspath(@__DIR__), "data", "$a.csv"), false)
             # end
-            # if i%10 == 0
-            #     if !isempty(M.F_inactive)
-            #         candidates = find_candidates(C)
-            #         if !isempty(candidates)
-            #             candidate = sample(candidates)
-            #             discriminator = get_discriminator(C, candidate, 3)
-            #             if discriminator != -1
-            #                 push!(discrims, i)
-            #                 println("Adding discriminator $discriminator")
-            #                 update_features!(M, discriminator)
-            #                 for action in M.A
-            #                     update_data!(C, action)
-            #                 end
-            #                 save_data(C.𝒮.F.D)
-            #                 save_full_data(C.𝒮.F.D_full)
-            #
-            #                 # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
-            #                 # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
-            #                 build_model!(M, C.𝒮.W)
-            #                 build_cas!(C)
-            #             end
-            #         end
-            #     end
-            # end
+            if i%10 == 0
+                if !isempty(M.F_inactive)
+                    candidates = find_candidates(C)
+                    if !isempty(candidates)
+                        candidate = sample(candidates)
+                        discriminator = get_discriminator(C, candidate, 3)
+                        if discriminator != -1
+                            push!(discrims, i)
+                            println("Adding discriminator $discriminator")
+                            update_features!(M, discriminator)
+                            for action in M.A
+                                update_data!(C, action)
+                            end
+                            save_data(C.𝒮.F.D)
+                            save_full_data(C.𝒮.F.D_full)
+
+                            # M = build_model(C.𝒮.W, M.F_active, M.F_inactive)
+                            # C = build_cas(M, C.𝒮.W, [0,1,2], ['∅', '⊘'])
+                            build_model!(M, C.𝒮.W)
+                            build_cas!(C)
+                        end
+                    end
+                end
+            end
         end
 
         # Update model
@@ -195,14 +195,14 @@ function run_episodes(M, C, L)
 
 
         results = [costs, stds, cost_errors, los, los_r, lo_function_of_signal_count, signal_counts, expected_task_costs, discrims]
-        save(joinpath(abspath(@__DIR__), "results.jld"), "results", results)
+        save_object(joinpath(abspath(@__DIR__), "results.jld"), results)
 
         x = signal_counts
 
         los_a = [x[2] for x in lo_function_of_signal_count]
         los_a = append!([los_a[1]], los_a[5:5:end])
 
-        g = scatter(signal_counts_per_10, [los los_r los_a], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable" "Visited" ])
+        g = scatter(signal_counts_per_10, [los los_r los_a], alpha=0.6, legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable" "Visited" ])
         savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
         #
         g2 = scatter(x, cost_errors, legend=:topleft, xlabel="Signals Received", ylabel="%Error")
@@ -215,7 +215,10 @@ function run_episodes(M, C, L)
         savefig(g4, joinpath(abspath(@__DIR__), "plots", "task_cost.png"))
 
         g5 = scatter(x, expected_task_costs, legend=:topleft, xlabel="Signals Received", ylabel="Expected Cost to Goal")
-        savefig(g4, joinpath(abspath(@__DIR__), "plots", "expected_task_cost.png"))
+        savefig(g5, joinpath(abspath(@__DIR__), "plots", "expected_task_cost.png"))
+
+        # g6 = scatter(x, smooth_data(expected_task_costs .- costs,5), legend=:topleft, xlabel="Signals Received", ylabel="Expected Cost to Goal")
+        # savefig(g6, joinpath(abspath(@__DIR__), "plots", "cost_error.png"))
     end
     save_data(C.𝒮.F.D)
     save_full_data(C.𝒮.F.D_full)
@@ -241,6 +244,7 @@ L = solve_model(C)
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
 results = run_episodes(M, C, L)
 
+
 simulate(C, L, 1)
 
 results = load(joinpath(abspath(@__DIR__), "person_rush", "ISR", "results.jld"), "results")
@@ -258,3 +262,12 @@ savefig(scatter(signal_counts_per_10, [results[4] results[5] results[6]],
         xlims=[0, 50], ylims=[0, 1.0], legend=:topleft,
         xlabel="Signal Count", ylabel="Level-Optimality", label=["All States" "Reachable"]),
         joinpath(abspath(@__DIR__),  "person_rush", "ISR", "plots", "level_optimality_by_signal_count.png"))
+
+x = results[7][6:end]
+exp_cost = smooth_data(results[8],5)
+savefig(scatter(exp_cost, xlabel="Signal Count", ylabel="Expected Cost", label=""),
+        joinpath(abspath(@__DIR__), "plots", "exp_task_cost.png"))
+
+task_cost = smooth_data(results[1],2)
+savefig(scatter(task_cost, xlabel="Signal Count", ylabel="Expected Cost", label=""),
+        joinpath(abspath(@__DIR__), "plots", "task_cost_per_episode.png"))

@@ -353,10 +353,11 @@ results = run_episodes(M, C)
 
 
 
-results_isr = load(joinpath(abspath(@__DIR__), "person_conscientious", "ISR", "results.jld"), "results")
+results_isr = load(joinpath(abspath(@__DIR__), "person_conscientious_2", "ISR", "results.jld"), "results")
 results_norm = load(joinpath(abspath(@__DIR__), "person_conscientious", "normal", "results.jld"), "results")
 
 los_a_isr = results_isr[5]
+los_r_isr = results_isr[6]
 los_v_isr = [x[2] for x in results_isr[7]]
 los_v_isr = append!([los_v_isr[1]], los_v_isr[10:10:end])
 x = results_isr[8]
@@ -368,7 +369,7 @@ los_v_norm = append!([los_v_norm[1]], los_v_norm[10:10:end])
 x2 = results_norm[8]
 x2 = append!([x2[1]], x2[10:10:end])
 
-g = scatter(x, [los_a_isr los_v_isr], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited"])
+g = scatter(x, [los_a_isr los_r_isr los_v_isr], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable" "Visited"])
 savefig(g, joinpath(abspath(@__DIR__), "plots", "av_lo_isr_conscientious.png"))
 g = scatter(x2[1:15], [los_a_norm[1:15] los_v_norm[1:15]], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Visited"])
 savefig(g, joinpath(abspath(@__DIR__), "plots", "av_lo_isr_conscientious.png"))

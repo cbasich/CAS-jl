@@ -68,7 +68,13 @@ function trial(solver, s)
 
     while s ∉ solver.solved
         # println(s)
-        if solver.M.S[s] ∈ solver.M.G || total_cost > solver.dead_end_cost
+        if total_cost > solver.dead_end_cost
+            break
+        end
+
+        state = solver.M.S[s]
+        if terminal(solver.M, state)
+            total_cost += autonomy_cost(state)
             break
         end
         # println(s)
