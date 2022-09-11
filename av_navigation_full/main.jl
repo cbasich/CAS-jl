@@ -300,8 +300,8 @@ function run_episodes(M, C)
         # end
 
         # Update model
-        update_feedback_profile!(C)
-        update_autonomy_profile!(C, ℒ)
+        # update_feedback_profile!(C)
+        # update_autonomy_profile!(C, ℒ)
         save_data(C.𝒮.F.D)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 

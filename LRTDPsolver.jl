@@ -71,7 +71,6 @@ function trial(solver, s)
         if total_cost > solver.dead_end_cost
             break
         end
-
         state = solver.M.S[s]
         if terminal(solver.M, state)
             total_cost += autonomy_cost(state)
