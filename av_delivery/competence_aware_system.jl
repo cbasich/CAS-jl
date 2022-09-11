@@ -77,9 +77,10 @@ function generate_autonomy_profile(𝒟::DomainSSP)
 end
 
 function update_potential(C, ℒ, s, a, L)
-    state = CASstate(C.𝒮.D.S[s], '∅')
+    state = CASstate([1, 1, 1] ,C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
-    X = [lookahead(ℒ, s2, ((a - 1) * 4 + l + 1) ) for l ∈ L]
+    # println(s2, " | ", a)
+    X = [lookahead(ℒ, s2, ((a - 1) * 3 + l + 1) ) for l ∈ L]
     P = softmax(-1.0 .* X)
     for l=1:size(L)[1]
         C.potential[s][a][L[l]+1] += P[l]
@@ -90,6 +91,9 @@ end
 function update_autonomy_profile!(C, ℒ)
     κ = C.𝒮.A.κ
     for (s, state) in enumerate(C.𝒮.D.S)
+        if state.w != C.s₀.state.w
+            continue
+        end
         for (a, action) in enumerate(C.𝒮.D.A)
             if κ[s][a] == competence(state, action)
                 continue
@@ -98,17 +102,18 @@ function update_autonomy_profile!(C, ℒ)
                 continue
             end
 
-            update_potential(C, ℒ, s, a, [0,1,2])
+            L = [0,1,2]
+            update_potential(C, ℒ, s, a, L)
             distr = softmax([C.potential[s][a][l+1] for l in L])
             i = sample(aweights(distr))
 
             if L[i] == 2
-                if C.𝒮.F.λ[s][a][2]['∅'] < 0.85
+                if C.𝒮.F.λ[s][a][1]['∅'] < 0.85
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
             elseif L[i] == 0
-                if C.𝒮.F.λ[s][a][1]['⊕'] > 0.25
+                if C.𝒮.F.λ[s][a][0]['⊕'] > 0.25
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
@@ -293,7 +298,7 @@ function generate_feedback_profile(𝒟::DomainSSP,
                 continue
             end
             f = get_state_features(state)
-            for l in [1,2]
+            for l in [0,1]
                 if typeof(state) == NodeState
                     pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
                 else
@@ -303,7 +308,11 @@ function generate_feedback_profile(𝒟::DomainSSP,
                     if σ == '⊖' || σ == '⊘'
                         λ[s][a][l][σ] = pred[1]
                     else
-                        λ[s][a][l][σ] = pred[2]
+                        try
+                            λ[s][a][l][σ] = pred[2]
+                        catch
+                            print(s, "|", a, "|", l)
+                        end
                     end
                 end
             end
@@ -328,7 +337,7 @@ function update_feedback_profile!(C)
                 continue
             end
             f = get_state_features(state)
-            for l in [1,2]
+            for l in [0,1]
                 if typeof(state) == NodeState
                     pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
                 else
@@ -504,7 +513,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             T[s][a] = Vector{Tuple{Int, Float64}}()
             if action.l == 0
                 p_approval = λ[base_s][base_a][0]['∅']
-                p_dissaproval = λ[base_s][base_a][0]['⊘']
+                p_disapproval = λ[base_s][base_a][0]['⊘']
 
                 if typeof(state.state) == EdgeState
                     if state.state.o
@@ -512,7 +521,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                             state′ = CASstate(sh′, EdgeState(state.state.u, state.state.v,
                                      state.state.θ, false, state.state.l, state.state.r, state.state.w), '∅')
                             push!(T[s][a], (C.SIndex[state′], p * p_approval))
-                            push!(T[s][a], (state, p * p_dissaproval))
+                            push!(T[s][a], (s, p * p_disapproval))
                         end
                     else
                         for (sp, p) in t
@@ -532,7 +541,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                     state′ = 𝒟.S[t[argmax([x[2] for x in t])][1]]
                     for (sh′, p) in th
                         push!(T[s][a], (C.SIndex[CASstate(sh′, state′, '∅')], p * p_approval))
-                        push!(T[s][a], (state, p ( p_disapproval)))
+                        push!(T[s][a], (s, (p*p_disapproval)))
                     end
                     # T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 4 + 4 , 1.0)]
                 end
@@ -649,43 +658,43 @@ function generate_feedback(state::CASstate,
     if state.sh[3] == 2
         if state.sh[2] == 1
             if (state.state.w.time == "night" && state.state.w.weather == "snowy")
-                return (action.l == 1) ? '⊖' : '⊘'
+                return '⊖'
             end
         else
             if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
                 state.state.w.weather == "snowy")
-                return (action.l == 1) ? '⊖' : '⊘'
+                return '⊖'
             end
         end
     end
 
     if typeof(state.state) == EdgeState
         if state.state.o && state.state.l == 1
-            return (action.l == 1) ? '⊖' : '⊘'
+            return '⊖'
         else
-            return (action.l == 1) ? '⊕' : '∅'
+            return '⊕'
         end
     else
         if action.action.value == '⤉'
-            return (action.l == 1) ? '⊕' : '∅'
+            return '⊕'
         elseif action.action.value == '→'
             if state.state.o && state.state.p && state.state.v > 1
-                return (action.l == 1) ? '⊖' : '⊘'
+                return '⊖'
             else
-                return (action.l == 1) ? '⊕' : '∅'
+                return '⊕'
             end
         else
             if state.state.o
                 if state.state.p || state.state.v > 1
-                    return (action.l == 1) ? '⊖' : '⊘'
+                    return '⊖'
                 else
-                    return (action.l == 1) ? '⊕' : '∅'
+                    return '⊕'
                 end
             else
                 if state.state.p && state.state.v > 2
-                    return (action.l == 1) ? '⊖' : '⊘'
+                    return '⊖'
                 else
-                    return (action.l == 1) ? '⊕' : '∅'
+                    return '⊕'
                 end
             end
         end

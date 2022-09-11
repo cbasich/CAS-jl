@@ -157,7 +157,7 @@ function run_episodes(M, C)
     total_signals_received, total_signals_received2 = 0, 0
     expected_task_costs = Vector{Float64}()
     results = []
-    for i=1:1000
+    for i=1:2
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         w = generate_random_world_state()
@@ -244,11 +244,11 @@ function run_episodes(M, C)
         los_a = [v[2] for v in lo_function_of_signal_count]
         los_a = append!([los_a[1]], los_a[10:10:end])
 
-        g = scatter(signal_counts_per_10, [los los_r], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable"])
-        savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
-
-        g1 = plot([los los_r], legend=:topleft, ylims=(0.,1.), xlabel="Episode", ylabel="Level Optimality", label = ["All States" "Reachable"])
-        savefig(g1, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_episode.png"))
+        # g = scatter(signal_counts_per_10, [los los_r], legend=:topleft, ylims=(0.,1.), xlabel="Signals Received", ylabel="Level Optimality", label = ["All States" "Reachable"])
+        # savefig(g, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_signal_count.png"))
+        #
+        # g1 = plot([los los_r], legend=:topleft, ylims=(0.,1.), xlabel="Episode", ylabel="Level Optimality", label = ["All States" "Reachable"])
+        # savefig(g1, joinpath(abspath(@__DIR__), "plots", "level_optimality_by_episode.png"))
 
         # g2 = scatter(x, [cost_errors cost_errors2], xlabel="Signals Received", ylabel="%Error", label = ["CAS" "No CAS"])
         # savefig(g2, joinpath(abspath(@__DIR__), "plots", "percent_error.png"))
@@ -256,8 +256,8 @@ function run_episodes(M, C)
         # g3 = scatter(x, [stds stds2], xlabel="Signals Received", ylabel="Reliability", label = ["CAS" "No CAS"])
         # savefig(g3, joinpath(abspath(@__DIR__), "plots", "standard_devs.png"))
 
-        g4 = scatter(signal_counts_per_10, [fixed_task_costs fixed_task_costs2], xlabel="Signal Count", ylabel="Average Cost to Goal", label = ["CAS" "No CAS"])
-        savefig(g4, joinpath(abspath(@__DIR__), "plots", "fixed_task_costs.png"))
+        # g4 = scatter(signal_counts_per_10, [fixed_task_costs fixed_task_costs2], xlabel="Signal Count", ylabel="Average Cost to Goal", label = ["CAS" "No CAS"])
+        # savefig(g4, joinpath(abspath(@__DIR__), "plots", "fixed_task_costs.png"))
 
         # task_errors = 100.0 .* ((costs .- expected_task_costs)./costs)
         # g5 = plot(task_errors, xlabel="Episode", ylabel="% Error")
@@ -282,7 +282,7 @@ end
 init_data()
 # CAS_vec = Vector{CASSP}()
 M = build_model()
-C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
+C = build_cas(M, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
 # set_route(M, C, 12, 10)
 # generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 # L = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
@@ -290,7 +290,7 @@ C = build_cas(M, [0,1,2,3], ['⊕', '⊖', '⊘', '∅'])
 # L2 = LRTDPsolver(M, 10000., 100, .001, Dict{Int, Int}(),
                  # false, Set{Int}(), zeros(length(M.S)), zeros(length(M.A)))
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
-results = run_episodes(M, C)
+@profview results = run_episodes(M, C)
 results = load_object(joinpath(abspath(@__DIR__), "experiment_7_21_22", "eps100", "results.jld2"))
 los_a = results[5]
 los_r = results[6]
