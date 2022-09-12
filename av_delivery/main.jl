@@ -67,7 +67,7 @@ function simulate(M::CASSP, L, m)
                 override_rate_records_per_ep[state.state][1] += 1
             end
             # println(state, "     ", s)
-            a = solve(L, M, s)[1]
+            @time a = solve(L, M, s)[1]
             # a = L.π[s]
             action = A[a]
             actions_taken += 1
@@ -110,7 +110,7 @@ function simulate(M::CASSP, L, m)
                 end
             end
             episode_cost += C(M, s, a)
-            if σ == '⊖'
+            if σ == '⊖' || σ == '⊘'
                 block_transition!(M, state, action)
                 state = CASstate(state.sh, state.state, '⊖')
                 # M.s₀ = state
@@ -118,7 +118,7 @@ function simulate(M::CASSP, L, m)
                 delete!(L.solved, s)
                 continue
             end
-            if action.l == 0 || σ == '⊘'
+            if action.l == 0 && σ == '∅'
                 # state = M.S[M.T[s][a][1][1]]
                 temp = M.T[s][a]
                 state = M.S[sample(first.(temp), aweights(last.(temp)))]
@@ -157,7 +157,7 @@ function run_episodes(M, C)
     total_signals_received, total_signals_received2 = 0, 0
     expected_task_costs = Vector{Float64}()
     results = []
-    for i=1:2
+    for i=1:1
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         w = generate_random_world_state()
@@ -165,9 +165,9 @@ function run_episodes(M, C)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
 
         println(i, "  |  Task: ", route)
-        ℒ = solve_model(C)
+        @time ℒ = solve_model(C)
         push!(mean_costs, ℒ.V[C.SIndex[C.s₀]])
-        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 10)
+        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 1)
         total_signals_received += signal_count
 
         # ℒ2 = solve_model(M)
@@ -291,6 +291,11 @@ C = build_cas(M, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
                  # false, Set{Int}(), zeros(length(M.S)), zeros(length(M.A)))
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
 @profview results = run_episodes(M, C)
+
+
+
+
+
 results = load_object(joinpath(abspath(@__DIR__), "experiment_7_21_22", "eps100", "results.jld2"))
 los_a = results[5]
 los_r = results[6]

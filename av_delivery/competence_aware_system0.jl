@@ -504,9 +504,8 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             t = 𝒟.T[base_s][base_a]
             if (t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a])
                 T[s][a] = Vector{Tuple{Int, Float64}}()
-                for i=1:length(th)
-                    push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                                    state.state, state.σ)], th[i][2]))
+                for (sh′, p) in th
+                    push!(T[s][a], (C.SIndex[CASstate(sh′, state.state, state.σ)], p))
                 end
                 continue
             end
@@ -518,20 +517,19 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
                 if typeof(state.state) == EdgeState
                     if state.state.o
-                        for i=1:length(th)
-                            state′ = CASstate(th[i][1], EdgeState(state.state.u,
-                                    state.state.v, state.state.θ, false,
-                                    state.state.l, state.state.r, state.state.w), '∅')
-                            push!(T[s][a], (C.SIndex[state′], th[i][2] * p_approval))
-                            push!(T[s][a], (s, th[i][2] * p_disapproval))
+                        for (sh′, p) in th
+                            state′ = CASstate(sh′, EdgeState(state.state.u, state.state.v,
+                                     state.state.θ, false, state.state.l, state.state.r, state.state.w), '∅')
+                            push!(T[s][a], (C.SIndex[state′], p * p_approval))
+                            push!(T[s][a], (s, p * p_disapproval))
                         end
                     else
-                        for i=1:length(t)
-                            bstate′ = 𝒟.S[t[i][1]]
+                        for (sp, p) in t
+                            bstate′ = 𝒟.S[sp]
                             if typeof(bstate′) == NodeState
-                                for j=1:length(th)
-                                    state′ = CASstate(th[j][1], bstate′, '⊘')
-                                    push!(T[s][a], (C.SIndex[state′], th[j][2]))
+                                for (sh′, p2) in th
+                                    state′ = CASstate(sh′, bstate′, '⊘')
+                                    push!(T[s][a], (C.SIndex[state′], p2))
                                 end
                                 continue
                             end
@@ -541,29 +539,26 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                 else
                     # sp = (t[argmax([x[2] for x in t])][1]-1) * 4 + 4
                     state′ = 𝒟.S[t[argmax([x[2] for x in t])][1]]
-                    for i=1:length(th)
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1], state′, '∅')],
-                                            th[i][2] * p_approval))
-                        push!(T[s][a], (s, (th[i][2] * p_disapproval)))
+                    for (sh′, p) in th
+                        push!(T[s][a], (C.SIndex[CASstate(sh′, state′, '∅')], p * p_approval))
+                        push!(T[s][a], (s, (p*p_disapproval)))
                     end
                     # T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 4 + 4 , 1.0)]
                 end
             elseif action.l == 1
                 p_approve = λ[base_s][base_a][1]['⊕']
                 p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
-                for i=1:length(th)
-                    push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊖')],
-                                    th[i][2] * p_disapprove))
-                    for j=1:length(t)
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1], 𝒟.S[t[j][1]], '⊕')],
-                                th[i][2] * t[j][2] * p_approve))
+                for (sh′, p) in th
+                    push!(T[s][a], (C.SIndex[CASstate(sh′, state.state, '⊖')], p * p_disapprove))
+                    for (sp, p2) in t
+                        push!(T[s][a], (C.SIndex[CASstate(sh′, 𝒟.S[sp], '⊕')],
+                                p * p2 * p_approve))
                     end
                 end
             else
-                for i=1:length(th)
-                    for j=1:length(t)
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                                𝒟.S[t[j][1]], '∅')], th[i][2] * t2[i][2]))
+                for (sh′, p) in th
+                    for (sp, p2) in t
+                        push!(T[s][a], (C.SIndex[CASstate(sh′, 𝒟.S[sp], '∅')], p * p2))
                         # push!(T[s][a], ((sp-1) * 4 + 4, p))
                     end
                 end

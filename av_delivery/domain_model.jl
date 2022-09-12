@@ -463,9 +463,9 @@ function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int,
 end
 
 function generate_costs(M::DomainSSP, s::Int, a::Int)
-    if terminal(M, M.S[s])
+    if M.S[s] in M.G #terminal(M, M.S[s])
         return 0.0
-    elseif M.T[s][a] == (s, 1.0)
+    elseif length(M.T[s][a]) == 1# == (s, 1.0)
         return 100.0
     else
         # if typeof(M.S[s]) == NodeState

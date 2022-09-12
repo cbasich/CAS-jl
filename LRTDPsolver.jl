@@ -13,10 +13,11 @@ mutable struct LRTDPsolver
 end
 
 function lookahead(solver, s, a)
-    q = 0.
-    for (sp, p) in solver.M.T[s][a]
-        if haskey(solver.π, sp)
-            q += p * solver.V[sp]
+    q, V, T = 0., solver.V, solver.M.T[s][a]
+    for i = 1:length(T)
+    # for (sp, p) in T
+        if haskey(solver.π, T[i][1])
+            q += T[i][2] * V[T[i][1]]
         end
     end
     return q + solver.M.C(solver.M, s, a)
@@ -124,7 +125,7 @@ function check_solved(solver, s)
         end
 
         for (sp, p) in solver.M.T[s][a]
-            if sp ∉ solver.solved && sp ∉ union(_open, _closed)
+            if sp ∉ solver.solved && sp ∉ _open && sp ∉ _closed
                 push!(_open, sp)
             end
         end
