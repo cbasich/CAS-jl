@@ -25,7 +25,7 @@ function lookahead(ℒ::LAOStarSolver,
             q += p * V[s′]
         end
     end
-    return q + C(M,s,a)
+    return q + C[s][a]#C(M,s,a)
 end
 
 function backup(ℒ::LAOStarSolver,
@@ -34,7 +34,7 @@ function backup(ℒ::LAOStarSolver,
     for a = 1:length(M.A)
         # ℒ.Qs[a] = lookahead(ℒ, M, s, a)
         if !allowed(M, s, a)
-            ℒ.Qs[a] = ℒ.dead_end_cost
+            ℒ.Qs[a] = 100000 #ℒ.dead_end_cost
         else
             ℒ.Qs[a] = lookahead(ℒ, M, s, a)
         end

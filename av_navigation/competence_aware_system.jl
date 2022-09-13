@@ -779,7 +779,7 @@ end
 
 function solve_model(C::CASSP)
     ℒ = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
-                     false, Set{Int}(), zeros(length(C.S)),
+                     false, Set{Int}(), zeros(length(M.S)), zeros(length(C.S)),
                                         zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])
     return ℒ

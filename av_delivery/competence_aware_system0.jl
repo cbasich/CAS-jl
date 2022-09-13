@@ -22,15 +22,13 @@ include("domain_model.jl")
 include("../utils.jl")
 
 struct CASstate
-       sh::Vector{Int}
     state::DomainState
         σ::Char
 end
 function ==(a::CASstate, b::CASstate)
-    return isequal(a.sh, b.sh) && isequal(a.state, b.state) && isequal(a.σ, b.σ)
+    return isequal(a.state, b.state) && isequal(a.σ, b.σ)
 end
 function Base.hash(a::CASstate, h::UInt)
-    h = hash(a.sh, h)
     h = hash(a.state, h)
     h = hash(a.σ, h)
     return h
@@ -69,7 +67,11 @@ function generate_autonomy_profile(𝒟::DomainSSP)
                     κ[s][a] = 2
                 end
             else
-                κ[s][a] = 1
+                if typeof(state) == NodeState && action.value == '⤉'
+                    κ[s][a] = 2
+                else
+                    κ[s][a] = 1
+                end
             end
         end
     end
@@ -77,9 +79,8 @@ function generate_autonomy_profile(𝒟::DomainSSP)
 end
 
 function update_potential(C, ℒ, s, a, L)
-    state = CASstate([1, 1, 1] ,C.𝒮.D.S[s], '∅')
+    state = CASstate(C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
-    # println(s2, " | ", a)
     X = [lookahead(ℒ, s2, ((a - 1) * 3 + l + 1) ) for l ∈ L]
     P = softmax(-1.0 .* X)
     for l=1:size(L)[1]
@@ -210,7 +211,7 @@ function human_state_transition(sh, s, a, l)
 
     T = Vector{Tuple{Vector, Float32}}()
     if o1 == 1 # Local operator available --> state is [1, x, 1]
-        if l == 3
+        if l == 2
             # Local operator becomes busy (only happens if not using operator)
             p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
             # Global operator takes over.
@@ -373,7 +374,7 @@ function save_data(D)
     end
 end
 
-function human_cost(sh, state::CASstate, action::CASaction)
+function human_cost(state::CASstate, action::CASaction)
     return [1.0 1.0 0.0][action.l + 1]#[5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
 end
 ##
@@ -389,7 +390,7 @@ mutable struct CASSP
     S::Vector{CASstate}
     A::Vector{CASaction}
     T
-    C
+    C::Array{Array{Float64,1},1}
    s₀::CASstate
     G::Set{CASstate}
     SIndex::Dict{CASstate, Int}
@@ -400,7 +401,7 @@ function CASSP(𝒮::CAS,
                S::Vector{CASstate},
                A::Vector{CASaction},
                T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
-               C::Function,
+               C::Array{Array{Float64,1},1},
               s₀::CASstate,
                G::Set{CASstate})
     SIndex, AIndex = generate_index_dicts(S, A)
@@ -424,34 +425,28 @@ end
 function generate_states(D, F)
     states = Vector{CASstate}()
     G = Set{CASstate}()
-    for sh in F.SH
-        for state in D.S
-            for σ in F.Σ
-                new_state = CASstate(sh, state, σ)
-                push!(states, new_state)
-                if state in D.G
-                    push!(G, new_state)
-                end
+    for state in D.S
+        for σ in F.Σ
+            new_state = CASstate(state, σ)
+            push!(states, new_state)
+            if state in D.G
+                push!(G, new_state)
             end
         end
     end
-    o1, o2 = rand(1:2), rand(1:2)
-    oa = (o1 == 1) ? 1 : 2
-    sh = [o1, o2, oa]
-    return states, CASstate(sh, D.s₀, '∅'), G
+    return states, CASstate(D.s₀, '⊕'), G
 end
 
 function reset_problem!(D, C)
-    sh = generate_random_operator_state()
-    C.s₀ = CASstate(sh, D.s₀, '∅')
+    C.s₀ = CASstate(D.s₀, '⊕')
     C.G = Set{CASstate}()
     for state in D.G
         for σ in C.𝒮.F.Σ
-            for sh in C.𝒮.F.SH
-                push!(C.G, CASstate(sh, state, σ))
-            end
+            push!(C.G, CASstate(state, σ))
         end
     end
+    generate_costs!(D)
+    generate_costs!(C)
 end
 
 function terminal(C::CASSP, state::CASstate)
@@ -469,10 +464,8 @@ function generate_actions(D, A)
     return actions
 end
 
-function allowed(C, s::Int,
-                    a::Int)
-    return true
-    # return C.A[a].l <= C.𝒮.A.κ[Int(ceil(s/4))][Int(ceil(a/4))]
+function allowed(C, s::Int, a::Int)
+    return C.A[a].l <= C.𝒮.A.κ[M.SIndex[C.S[s].state]][Int(ceil(a/3))]
 end
 
 function generate_transitions!(𝒟, 𝒜, ℱ, C,
@@ -489,7 +482,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
         for (a, action) in enumerate(A)
             if state in G
-                state′ = CASstate(state.sh, state.state, '∅')
+                state′ = CASstate(state.state, '⊕')
                 T[s][a] = [(C.SIndex[state′], 1.0)]
                 continue
             end
@@ -499,14 +492,10 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_s = 𝒟.SIndex[base_state]
             base_a = 𝒟.AIndex[base_action]
 
-            th = ℱ.TH(state.sh, base_state, base_action, action.l)
-
             t = 𝒟.T[base_s][base_a]
             if (t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a])
                 T[s][a] = Vector{Tuple{Int, Float64}}()
-                for (sh′, p) in th
-                    push!(T[s][a], (C.SIndex[CASstate(sh′, state.state, state.σ)], p))
-                end
+                push!(T[s][a], (s, 1.0))
                 continue
             end
 
@@ -517,50 +506,41 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
                 if typeof(state.state) == EdgeState
                     if state.state.o
-                        for (sh′, p) in th
-                            state′ = CASstate(sh′, EdgeState(state.state.u, state.state.v,
-                                     state.state.θ, false, state.state.l, state.state.r, state.state.w), '∅')
-                            push!(T[s][a], (C.SIndex[state′], p * p_approval))
-                            push!(T[s][a], (s, p * p_disapproval))
-                        end
+                        state′ = CASstate(EdgeState(state.state.u,
+                                state.state.v, state.state.θ, false,
+                                state.state.l, state.state.r, state.state.w), '∅')
+                        push!(T[s][a], (C.SIndex[state′], p_approval))
+                        push!(T[s][a], (C.SIndex[state.state, '⊘')], p_disapproval))
                     else
-                        for (sp, p) in t
-                            bstate′ = 𝒟.S[sp]
+                        for i=1:length(t)
+                            bstate′ = 𝒟.S[t[i][1]]
                             if typeof(bstate′) == NodeState
-                                for (sh′, p2) in th
-                                    state′ = CASstate(sh′, bstate′, '⊘')
-                                    push!(T[s][a], (C.SIndex[state′], p2))
-                                end
+                                state′ = CASstate(bstate′, '⊘')
+                                push!(T[s][a], (C.SIndex[state′], 1.0))
                                 continue
                             end
                         end
                     end
-                    # T[s][a] = [(C.SIndex[state′], 1.0)]
                 else
-                    # sp = (t[argmax([x[2] for x in t])][1]-1) * 4 + 4
-                    state′ = 𝒟.S[t[argmax([x[2] for x in t])][1]]
-                    for (sh′, p) in th
-                        push!(T[s][a], (C.SIndex[CASstate(sh′, state′, '∅')], p * p_approval))
-                        push!(T[s][a], (s, (p*p_disapproval)))
+                    for j = 1:length(t)
+                        push!(T[s][a], (C.SIndex[CASstate(𝒟.S[t[j][1]], '∅')],
+                                        t[j][2] * p_approval))
                     end
-                    # T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 4 + 4 , 1.0)]
+                    push!(T[s][a], (C.SIndex[Cstate.state, '⊘')], p_disapproval))
                 end
             elseif action.l == 1
                 p_approve = λ[base_s][base_a][1]['⊕']
                 p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
-                for (sh′, p) in th
-                    push!(T[s][a], (C.SIndex[CASstate(sh′, state.state, '⊖')], p * p_disapprove))
-                    for (sp, p2) in t
-                        push!(T[s][a], (C.SIndex[CASstate(sh′, 𝒟.S[sp], '⊕')],
-                                p * p2 * p_approve))
-                    end
+                push!(T[s][a], (C.SIndex[CASstate(state.state, '⊖')],
+                                p_disapprove))
+                for j=1:length(t)
+                    push!(T[s][a], (C.SIndex[CASstate(𝒟.S[t[j][1]], '⊕')],
+                                t[j][2] * p_approve))
                 end
             else
-                for (sh′, p) in th
-                    for (sp, p2) in t
-                        push!(T[s][a], (C.SIndex[CASstate(sh′, 𝒟.S[sp], '∅')], p * p2))
-                        # push!(T[s][a], ((sp-1) * 4 + 4, p))
-                    end
+                for j=1:length(t)
+                    push!(T[s][a], (C.SIndex[CASstate(
+                            𝒟.S[t[j][1]], '∅')], t[j][2]))
                 end
             end
         end
@@ -597,9 +577,10 @@ end
 function block_transition!(C::CASSP,
                        state::CASstate,
                       action::CASaction)
-    state′ = CASstate(state.sh, state.state, '⊕')
+    state′ = CASstate(state.state, '⊕')
     s, a = C.SIndex[state′], C.AIndex[action]
     # TODO: why do we not block C.T[s][a] as well? Not understanding...
+    C.T[s][a] = [(s, 1.0)]
     C.T[s+1][a] = [(s+1, 1.0)]
     C.T[s+2][a] = [(s+2, 1.0)]
     C.T[s+3][a] = [(s+3, 1.0)]
@@ -610,14 +591,24 @@ function generate_costs(C::CASSP,
                         a::Int,)
     D, A, F = C.𝒮.D, C.𝒮.A, C.𝒮.F
     state, action = C.S[s], C.A[a]
-    cost = D.C(D, D.SIndex[state.state], D.AIndex[action.action])
+    cost = D.C[D.SIndex[state.state]][D.AIndex[action.action]]
     cost += A.μ(state)
-    cost += F.ρ(state.sh, state, action)
+    cost += F.ρ(state, action)
     return cost
+end
+
+function generate_costs!(C::CASSP)
+    for s = 1:length(C.S)
+        for a = 1:length(C.A)
+            C.C[s][a] = generate_costs(C, s, a)
+        end
+    end
+    # C.C = [[generate_costs(C, s, a) for a=1:length(C.A)] for s=1:length(C.S)]
 end
 
 function generate_feedback(state::CASstate,
                           action::CASaction,
+                              sh,
                                ϵ::Float64)
     # Request for ToC logic
     if action.l == 0
@@ -648,53 +639,53 @@ function generate_feedback(state::CASstate,
     end
 
     if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
-      return '⊕'
+      return (action.l == 1) ? '⊕' : '∅'
     end
 
     if rand() < 1 - get_consistency(state.sh)
         return ['⊕', '⊖'][rand(1:2)]
     end
 
-    if state.sh[3] == 2
-        if state.sh[2] == 1
+    if sh[3] == 2
+        if sh[2] == 1
             if (state.state.w.time == "night" && state.state.w.weather == "snowy")
-                return '⊖'
+                return (action.l == 1) ? '⊖' : '⊘'
             end
         else
             if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
                 state.state.w.weather == "snowy")
-                return '⊖'
+                return (action.l == 1) ? '⊖' : '⊘'
             end
         end
     end
 
     if typeof(state.state) == EdgeState
         if state.state.o && state.state.l == 1
-            return '⊖'
+            return (action.l == 1) ? '⊖' : '⊘'
         else
-            return '⊕'
+            return (action.l == 1) ? '⊕' : '∅'
         end
     else
         if action.action.value == '⤉'
-            return '⊕'
+            return (action.l == 1) ? '⊕' : '∅'
         elseif action.action.value == '→'
             if state.state.o && state.state.p && state.state.v > 1
-                return '⊖'
+                return (action.l == 1) ? '⊖' : '⊘'
             else
-                return '⊕'
+                return (action.l == 1) ? '⊕' : '∅'
             end
         else
             if state.state.o
                 if state.state.p || state.state.v > 1
-                    return '⊖'
+                    return (action.l == 1) ? '⊖' : '⊘'
                 else
-                    return '⊕'
+                    return (action.l == 1) ? '⊕' : '∅'
                 end
             else
                 if state.state.p && state.state.v > 2
-                    return '⊖'
+                    return (action.l == 1) ? '⊖' : '⊘'
                 else
-                    return '⊕'
+                    return (action.l == 1) ? '⊕' : '∅'
                 end
             end
         end
@@ -798,17 +789,19 @@ function build_cas(𝒟::DomainSSP,
     S, s₀, G = generate_states(𝒟, ℱ)
     A = generate_actions(𝒟, 𝒜)
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
-
-    C = CASSP(𝒮, S, A, T, generate_costs, s₀, G)
+    costs = [[0. for a=1:length(A)] for s=1:length(S)]
+    C = CASSP(𝒮, S, A, T, costs, s₀, G)
+    generate_costs!(C)
     generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
     # check_transition_validity(C)
     return C
 end
 
 function solve_model(C::CASSP)
+    L = solve_model(C.𝒮.D)
     ℒ = LRTDPsolver(C, 10000., 1000, .01, Dict{Int, Int}(),
-                     false, Set{Int}(), zeros(length(C.S)),
-                                        zeros(length(C.A)))
+                     false, Set{Int}(), L.V, zeros(length(C.S)),
+                                             zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])
     return ℒ
 end

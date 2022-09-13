@@ -8,28 +8,36 @@ mutable struct LRTDPsolver
     π::Dict{Int, Int}
     dont_label::Bool
     solved::Set{Int}
+    H::Vector{Float64}
     V::Vector{Float64}
     Q::Vector{Float64}
 end
 
 function lookahead(solver, s, a)
-    q, V, T = 0., solver.V, solver.M.T[s][a]
+    q, V, H, M, T = 0., solver.V, solver.H, solver.M, solver.M.T[s][a]
     for i = 1:length(T)
     # for (sp, p) in T
         if haskey(solver.π, T[i][1])
             q += T[i][2] * V[T[i][1]]
+        else
+            q += T[i][2] * H[M.𝒮.D.SIndex[M.S[T[i][1]].state]]
+            # println(T[i][2], "|", H[M.𝒮.D.SIndex[M.S[T[i][1]].state]], "|", T[i][1])
+            # println(q)
         end
     end
-    return q + solver.M.C(solver.M, s, a)
+    # return q + solver.M.C(solver.M, s, a)
+    return q + solver.M.C[s][a]
 end
 
 function backup(solver, s)
     for a = 1:length(solver.M.A)
         if !allowed(solver.M, s, a)
-            solver.Q[a] = solver.dead_end_cost
+            solver.Q[a] = max(solver.dead_end_cost, lookahead(solver, s, a))
+            # println(a)
         else
             solver.Q[a] = lookahead(solver, s, a)
         end
+        # solver.Q[a] = lookahead(solver, s, a)
     end
     a = Base.argmin(solver.Q)
     return a, solver.Q[a]
@@ -40,6 +48,7 @@ function bellman_update(solver, s)
     residual = abs(solver.V[s] - q)
     solver.V[s] = q
     solver.π[s] = a
+    # println(s, " | ", residual)
     return residual
 end
 
@@ -47,6 +56,7 @@ function solve(solver, M, s)
     trials = 0
     while s ∉ solver.solved && trials < solver.max_trials
         trial(solver, s)
+        # println(trials)
         trials += 1
     end
     return solver.π[s]
@@ -55,10 +65,10 @@ end
 function generate_successor(T)
     r = rand()
     thresh = 0.
-    for (sp, p) in T
-        thresh += p
+    for i=1:length(T)
+        thresh += T[i][2]
         if r <= thresh
-            return sp
+            return T[i][1]
         end
     end
 end
@@ -66,15 +76,15 @@ end
 function trial(solver, s)
     total_cost = 0.
     visited = Set()
-
+    M = solver.M
     while s ∉ solver.solved
         # println(s)
         if total_cost > solver.dead_end_cost
             break
         end
-        state = solver.M.S[s]
-        if terminal(solver.M, state)
-            total_cost += autonomy_cost(state)
+        state = M.S[s]
+        if terminal(M, state)
+            # total_cost += autonomy_cost(state)
             break
         end
         # println(s)
@@ -83,9 +93,9 @@ function trial(solver, s)
         bellman_update(solver, s)
 
         a = solver.π[s]
-        total_cost += solver.M.C(solver.M, s, a)
-
-        s = generate_successor(solver.M.T[s][a])
+        total_cost += M.C[s][a]
+        # println(a)
+        s = generate_successor(M.T[s][a])
     end
 
     if solver.dont_label
@@ -120,6 +130,7 @@ function check_solved(solver, s)
         a = solver.π[s]
         push!(_closed, s)
 
+        # println(residual)
         if residual > solver.ϵ
             rv = false
         end

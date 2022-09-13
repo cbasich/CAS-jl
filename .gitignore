@@ -26,4 +26,5 @@ Manifest.toml
 
 *.csv
 *.jld
+*.jld2
 *.png

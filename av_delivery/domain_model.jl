@@ -149,7 +149,7 @@ end
 function DomainSSP(S::Vector{DomainState},
                    A::Vector{DomainAction},
                    T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
-                   C::Function,
+                   C::Array{Array{Float64,1},1},
                   s₀::DomainState,
                    G::Set{DomainState},
                graph::Graph)
@@ -185,7 +185,7 @@ function generate_states(𝒢::Graph,
         node = N[node_id]
         for p in [false, true]
             for o in [false, true]
-                for v in [0,1,2,3,4]
+                for v in [0,1,2,3]
                     for θ in DIRECTIONS
                         for w in W
                             state = NodeState(node_id, p, o, v, θ, WorldState(w))
@@ -229,7 +229,7 @@ function set_goals!(M, goals, w)
     M.G = Set{DomainState}()
     for p in [false, true]
         for o in [false, true]
-            for v in [0,1,2,3,4]
+            for v in [0,1,2,3]
                 for θ in DIRECTIONS
                     for g in goals
                         state = NodeState(g, p, o, v, θ, w)
@@ -398,24 +398,24 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
 
     N, E = G.nodes, G.edges
 
-    edge = E[state.u][state.v]
-    p_arrived = (1 / edge["length"])
-    if edge["num lanes"] == 2
-        p_arrived *= 2
-    elseif edge["num lanes"] == 3
-        p_arrived *= 4
-    end
-    p_driving = 1 - p_arrived
-    p_obstruction = edge["obstruction probability"]
-
-    mass = 0.0
-
-    state′ = EdgeState(state.u, state.v, state.θ, true, edge["num lanes"], state.r, state.w)
-    push!(T, (M.SIndex[state′], p_driving * p_obstruction))
-    mass += p_driving * p_obstruction
-    state′ = EdgeState(state.u, state.v, state.θ, false, edge["num lanes"], state.r, state.w)
-    push!(T, (M.SIndex[state′], p_driving * (1 - p_obstruction)))
-    mass += p_driving * (1 - p_obstruction)
+    # edge = E[state.u][state.v]
+    # p_arrived = (1 / edge["length"])
+    # if edge["num lanes"] == 2
+    #     p_arrived *= 2
+    # elseif edge["num lanes"] == 3
+    #     p_arrived *= 4
+    # end
+    # p_driving = 1 - p_arrived
+    # p_obstruction = edge["obstruction probability"]
+    #
+    # mass = 0.0
+    #
+    # state′ = EdgeState(state.u, state.v, state.θ, true, edge["num lanes"], state.r, state.w)
+    # push!(T, (M.SIndex[state′], p_driving * p_obstruction))
+    # mass += p_driving * p_obstruction
+    # state′ = EdgeState(state.u, state.v, state.θ, false, edge["num lanes"], state.r, state.w)
+    # push!(T, (M.SIndex[state′], p_driving * (1 - p_obstruction)))
+    # mass += p_driving * (1 - p_obstruction)
 
     node = N[state.v]
     p_ped = node["pedestrian probability"]
@@ -424,13 +424,13 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
 
     for num_vehicle in [0,1,2,3]
         state′ = NodeState(state.v, false, false, num_vehicle, state.θ, state.w)
-        push!(T, (M.SIndex[state′], ((1 - mass)*(1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
+        push!(T, (M.SIndex[state′], ((1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
         state′ = NodeState(state.v, true, false, num_vehicle, state.θ, state.w)
-        push!(T, (M.SIndex[state′], ((1 - mass)*p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
+        push!(T, (M.SIndex[state′], (p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
         state′ = NodeState(state.v, false, true, num_vehicle, state.θ, state.w)
-        push!(T, (M.SIndex[state′], ((1 - mass)*(1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
+        push!(T, (M.SIndex[state′], ((1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
         state′ = NodeState(state.v, true, true, num_vehicle, state.θ, state.w)
-        push!(T, (M.SIndex[state′], ((1 - mass)*p_ped*p_occl*p_vehicles[num_vehicle + 1])))
+        push!(T, (M.SIndex[state′], (p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
 
     return T
@@ -465,7 +465,7 @@ end
 function generate_costs(M::DomainSSP, s::Int, a::Int)
     if M.S[s] in M.G #terminal(M, M.S[s])
         return 0.0
-    elseif length(M.T[s][a]) == 1# == (s, 1.0)
+    elseif M.T[s][a] == [(s, 1.0)]
         return 100.0
     else
         # if typeof(M.S[s]) == NodeState
@@ -480,9 +480,23 @@ function generate_costs(M::DomainSSP, s::Int, a::Int)
                 return 10.0
             end
         else
-            return 1.0
+            e = M.graph.edges[M.S[s].u][M.S[s].v]
+            if !M.S[s].o
+                return max(e["length"]/(2^(e["num lanes"] - 1)), 1.0)
+            else
+                return 1.0
+            end
         end
     end
+end
+
+function generate_costs!(M)
+    for s = 1:length(M.S)
+        for a = 1:length(M.A)
+            M.C[s][a] = generate_costs(M, s, a)
+        end
+    end
+    # M.C = [[generate_costs(M, s, a) for a=1:length(M.A)] for s=1:length(M.S)]
 end
 
 function check_transition_validity(ℳ::DomainSSP)
@@ -557,8 +571,10 @@ function build_model()
     S, s₀, G = generate_states(graph, init, goals, w)
     A = generate_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
-    M = DomainSSP(S, A, T, generate_costs, s₀, G, graph)
+    C = [[0. for a=1:length(A)] for s=1:length(S)]
+    M = DomainSSP(S, A, T, C, s₀, G, graph)
     generate_transitions!(M, graph)
+    generate_costs!(M)
     check_transition_validity(M)
     return M
 end
@@ -581,6 +597,17 @@ end
 function allowed(D::DomainSSP, s::Int, a::Int)
     return true
 end
+
+function quick_sim(M, L)
+    state = M.s₀
+    while !terminal(M, state)
+        s = M.SIndex[state]
+        a = solve(L, M, s)[1]
+        println("Taking action $(M.A[a]) in state $state")
+        state = M.S[generate_successor(M, s, a)]
+    end
+end
+
 #
 # M = build_model()
 # L = solve_model(M)

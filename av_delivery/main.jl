@@ -1,7 +1,9 @@
 using Profile,ProfileView,JLD2
-include("../utils.jl")
+include("utils.jl")
 include("competence_aware_system.jl")
 include("../LRTDPsolver.jl")
+include("../VISolver.jl")
+
 
 function simulate(M::DomainSSP, C::CASSP, L, m)
     S, A = M.S, M.A
@@ -46,8 +48,101 @@ function simulate(M::DomainSSP, C::CASSP, L, m)
     return mean(c), std(c), signal_count, (actions_at_competence / actions_taken), (abs(mean(c) - expected_cost)/expected_cost)
 end
 
+# function simulate(M::CASSP, L, m)
+#     override_rate_records_per_ep = Dict{DomainState, Array{Int}}()
+#     S, A, C = M.S, M.A, M.C
+#     T_base = deepcopy(M.T)
+#     c = Vector{Float64}()
+#     signal_count = 0
+#     actions_taken = 0
+#     actions_at_competence = 0
+#     expected_cost = L.V[M.SIndex[M.s₀]]
+#     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
+#     for i ∈ 1:m
+#         state = M.s₀
+#         episode_cost = 0.0
+#         while true
+#             s = M.SIndex[state]
+#             if !haskey(override_rate_records_per_ep, state.state)
+#                 override_rate_records_per_ep[state.state] = [1 0]
+#             else
+#                 override_rate_records_per_ep[state.state][1] += 1
+#             end
+#             # println(state, "     ", s)
+#             @time a = solve(L, M, s)[1]
+#             # a = L.π[s]
+#             action = A[a]
+#             actions_taken += 1
+#             actions_at_competence += (action.l == competence(state.state, action.action))
+#             println("$i   |   Taking action $action in state $state.")
+#             if action.l == 0 || action.l == 3
+#                 σ = '∅'
+#             elseif action.l == 1
+#                 σ = generate_feedback(state, action, M.𝒮.F.ϵ)
+#                 if i == m
+#                     y = (σ == '⊕') ? 1 : 0
+#                     d = hcat(get_state_features(state.state), 1, y)
+#                     if typeof(state.state) == NodeState
+#                         # record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
+#                         M.𝒮.F.D["node"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["node"][string(action.action.value)])
+#                     else
+#                         # record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
+#                         M.𝒮.F.D["edge"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["edge"][string(action.action.value)])
+#                     end
+#                 end
+#             elseif action.l == 2 #|| (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
+#                 σ = generate_feedback(state, action, M.𝒮.F.ϵ)
+#                 if i == m
+#                     y = (σ == '∅') ? 1 : 0
+#                     d = hcat(get_state_features(state.state), 2, y)
+#                     if typeof(state.state) == NodeState
+#                         # record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
+#                         M.𝒮.F.D["node"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["node"][string(action.action.value)])
+#                     else
+#                         # record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
+#                         M.𝒮.F.D["edge"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["edge"][string(action.action.value)])
+#                     end
+#                 end
+#             end
+#             # println("received feedback: $σ")
+#             if σ != '∅'
+#                 override_rate_records_per_ep[state.state][2] += 1
+#                 if i == m
+#                     signal_count += 1
+#                 end
+#             end
+#             episode_cost += C[s][a]
+#             if σ == '⊖' || σ == '⊘'
+#                 block_transition!(M, state, action)
+#                 state = CASstate(state.sh, state.state, '⊖')
+#                 # M.s₀ = state
+#                 # L = solve_model(M)
+#                 # delete!(L.solved, s)
+#                 L.solved[s] = false
+#                 continue
+#             end
+#             if action.l == 0 && σ == '∅'
+#                 # state = M.S[M.T[s][a][1][1]]
+#                 temp = M.T[s][a]
+#                 state = M.S[sample(first.(temp), aweights(last.(temp)))]
+#             else
+#                 state = generate_successor(M.𝒮.D, state, action, σ)
+#             end
+#             # println(σ, "     | succ state |      ", state)
+#             if terminal(M, state) #|| episode_cost > 100.0
+#                 break
+#             end
+#         end
+#
+#         push!(c, episode_cost)
+#         M.T = T_base
+#     end
+#     push!(override_rate_records, override_rate_records_per_ep)
+#     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
+#     return mean(c), std(c), signal_count, (actions_at_competence / actions_taken), (abs(mean(c) - expected_cost)/expected_cost)
+# end
+
 function simulate(M::CASSP, L, m)
-    override_rate_records_per_ep = Dict{DomainState, Array{Int}}()
     S, A, C = M.S, M.A, M.C
     T_base = deepcopy(M.T)
     c = Vector{Float64}()
@@ -61,60 +156,32 @@ function simulate(M::CASSP, L, m)
         episode_cost = 0.0
         while true
             s = M.SIndex[state]
-            if !haskey(override_rate_records_per_ep, state.state)
-                override_rate_records_per_ep[state.state] = [1 0]
-            else
-                override_rate_records_per_ep[state.state][1] += 1
-            end
-            # println(state, "     ", s)
             @time a = solve(L, M, s)[1]
-            # a = L.π[s]
             action = A[a]
             actions_taken += 1
             actions_at_competence += (action.l == competence(state.state, action.action))
             println("$i   |   Taking action $action in state $state.")
-            if action.l == 0 || action.l == 3
-                σ = '∅'
-            elseif action.l == 1
-                σ = generate_feedback(state, action, M.𝒮.F.ϵ)
+            σ = '⊕'
+            if action.l == 0 || action.l == 1
+                σ = generate_feedback(state, action, get_consistency(state.sh))
                 if i == m
-                    y = (σ == '⊕') ? 1 : 0
-                    d = hcat(get_state_features(state.state), 1, y)
+                    y = (σ == '⊕' || σ == '∅') ? 1 : 0
+                    d = hcat(get_state_features(state.state), state.sh[state.sh[3]], action.l, y)
                     if typeof(state.state) == NodeState
-                        # record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                        M.𝒮.F.D["node"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["node"][string(action.action.value)])
+                        M.𝒮.F.D[state.sh[3]]["node"][string(action.action.value)] = record_data!(
+                            d, M.𝒮.F.D[state.sh[3]]["node"][string(action.action.value)])
                     else
-                        # record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
-                        M.𝒮.F.D["edge"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["edge"][string(action.action.value)])
+                        M.𝒮.F.D[state.sh[3]]["edge"][string(action.action.value)] = record_data!(
+                            d, M.𝒮.F.D[state.sh[3]]["edge"][string(action.action.value)])
                     end
-                end
-            elseif action.l == 2 #|| (action.l == 1 && !M.flags[M.𝒮.D.SIndex[state.state]][M.𝒮.D.AIndex[action.action]])
-                σ = generate_feedback(state, action, M.𝒮.F.ϵ)
-                if i == m
-                    y = (σ == '∅') ? 1 : 0
-                    d = hcat(get_state_features(state.state), 2, y)
-                    if typeof(state.state) == NodeState
-                        # record_data(d,joinpath(abspath(@__DIR__), "data", "node_$(action.action.value).csv"))
-                        M.𝒮.F.D["node"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["node"][string(action.action.value)])
-                    else
-                        # record_data(d,joinpath(abspath(@__DIR__), "data", "edge_$(action.action.value).csv"))
-                        M.𝒮.F.D["edge"][string(action.action.value)] = record_data!(d, M.𝒮.F.D["edge"][string(action.action.value)])
-                    end
+
                 end
             end
-            # println("received feedback: $σ")
-            if σ != '∅'
-                override_rate_records_per_ep[state.state][2] += 1
-                if i == m
-                    signal_count += 1
-                end
-            end
-            episode_cost += C(M, s, a)
+
+            episode_cost += C[s][a]
             if σ == '⊖' || σ == '⊘'
                 block_transition!(M, state, action)
-                state = CASstate(state.sh, state.state, '⊖')
-                # M.s₀ = state
-                # L = solve_model(M)
+                state = CASstate(state.sh, state.state, σ)
                 delete!(L.solved, s)
                 continue
             end
@@ -122,6 +189,9 @@ function simulate(M::CASSP, L, m)
                 # state = M.S[M.T[s][a][1][1]]
                 temp = M.T[s][a]
                 state = M.S[sample(first.(temp), aweights(last.(temp)))]
+                while state.σ != σ
+                    state = M.S[sample(first.(temp), aweights(last.(temp)))]
+                end
             else
                 state = generate_successor(M.𝒮.D, state, action, σ)
             end
@@ -134,10 +204,74 @@ function simulate(M::CASSP, L, m)
         push!(c, episode_cost)
         M.T = T_base
     end
-    push!(override_rate_records, override_rate_records_per_ep)
+    # push!(override_rate_records, override_rate_records_per_ep)
     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
     return mean(c), std(c), signal_count, (actions_at_competence / actions_taken), (abs(mean(c) - expected_cost)/expected_cost)
 end
+
+# function simulate(M::CASSP, V, m)
+#     override_rate_records_per_ep = Dict{DomainState, Array{Int}}()
+#     S, A, C = M.S, M.A, M.C
+#     T_base = deepcopy(M.T)
+#     c = Vector{Float64}()
+#     signal_count = 0
+#     actions_taken = 0
+#     actions_at_competence = 0
+#     expected_cost = V.V[M.SIndex[M.s₀]]
+#     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
+#     for i ∈ 1:m
+#         state = M.s₀
+#         episode_cost = 0.0
+#         while true
+#             s = M.SIndex[state]
+#             a = V.π[s]
+#             action = A[a]
+#             actions_taken += 1
+#             actions_at_competence += (action.l == competence(state.state, action.action))
+#             println("$i   |   Taking action $action in state $state.")
+#             σ = '⊕'
+#             if action.l == 0 || action.l == 1
+#                 σ = generate_feedback(state, action, get_consistency(state.sh))
+#                 if i == m
+#                     y = (σ == '⊕' || σ == '∅') ? 1 : 0
+#                     d = hcat(get_state_features(state.state), action.l, y)
+#                     if typeof(state.state) == NodeState
+#                         M.𝒮.F.D[state.sh[3]]["node"][string(action.action.value)] = record_data!(
+#                             d, M.𝒮.F.D[state.sh[3]]["node"][string(action.action.value)])
+#                     else
+#                         M.𝒮.F.D[state.sh[3]]["edge"][string(action.action.value)] = record_data!(
+#                             d, M.𝒮.F.D[state.sh[3]]["edge"][string(action.action.value)])
+#                     end
+#
+#                 end
+#             end
+#
+#             episode_cost += C[s][a]
+#             if σ == '⊖' || σ == '⊘'
+#                 block_transition!(M, state, action)
+#                 state = CASstate(state.sh, state.state, σ)
+#                 V.V[s] = 100000
+#                 V.π[s] = argmax(V.V[s])
+#                 continue
+#             end
+#             if action.l == 0 && σ == '∅'
+#                 temp = M.T[s][a]
+#                 state = M.S[sample(first.(temp), aweights(last.(temp)))]
+#             else
+#                 state = generate_successor(M.𝒮.D, state, action, σ)
+#             end
+#             # println(σ, "     | succ state |      ", state)
+#             if terminal(M, state) #|| episode_cost > 100.0
+#                 break
+#             end
+#         end
+#
+#         push!(c, episode_cost)
+#         M.T = T_base
+#     end
+#     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
+#     return mean(c), std(c), signal_count, (actions_at_competence / actions_taken), (abs(mean(c) - expected_cost)/expected_cost)
+# end
 
 function run_episodes(M, C)
     println("Starting")
@@ -157,7 +291,7 @@ function run_episodes(M, C)
     total_signals_received, total_signals_received2 = 0, 0
     expected_task_costs = Vector{Float64}()
     results = []
-    for i=1:1
+    for i=1:20
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         w = generate_random_world_state()
@@ -167,7 +301,10 @@ function run_episodes(M, C)
         println(i, "  |  Task: ", route)
         @time ℒ = solve_model(C)
         push!(mean_costs, ℒ.V[C.SIndex[C.s₀]])
-        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 1)
+        # V = ValueIterationSolver(.01, true, Dict{Integer, Integer}(),
+        #     zeros(length(C.S)), zeros(length(C.A)))
+        # solve(V, C)
+        c, std, signal_count, percent_lo, error = simulate(C, ℒ, 10)
         total_signals_received += signal_count
 
         # ℒ2 = solve_model(M)
@@ -226,8 +363,10 @@ function run_episodes(M, C)
         # end
 
         # Update model
-        update_feedback_profile!(C)
-        update_autonomy_profile!(C, ℒ)
+        if i == 10
+            update_feedback_profile!(C)
+            update_autonomy_profile!(C, ℒ)
+        end
         save_data(C.𝒮.F.D)
         # generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
         # set_consistency(C.𝒮.F, min(1.0, C.𝒮.F.ϵ+0.01))
@@ -285,16 +424,24 @@ M = build_model()
 C = build_cas(M, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
 # set_route(M, C, 12, 10)
 # generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-# L = LRTDPsolver(C, 10000., 100, .001, Dict{Int, Int}(),
-                 # false, Set{Int}(), zeros(length(C.S)), zeros(length(C.A)))
+LM = solve_model(M)
+H = [LM.V[M.SIndex[state.state]] for (s,state) in enumerate(C.S)]
+ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
+                    zeros(length(C.S)), zeros(length(C.S)),
+                    H, zeros(length(C.A)),
+                    [false for i=1:length(C.S)])
+L = LRTDPsolver(C, 1000., 100, .001, Dict{Int, Int}(),
+                 false, Set{Int}(), LM.V, zeros(length(C.S)), zeros(length(C.A)))
 # L2 = LRTDPsolver(M, 10000., 100, .001, Dict{Int, Int}(),
                  # false, Set{Int}(), zeros(length(M.S)), zeros(length(M.A)))
 override_rate_records = Vector{Dict{DomainState, Array{Int}}}()
-@profview results = run_episodes(M, C)
+results = run_episodes(M, C)
 
 
 
-
+V = ValueIterationSolver(.01, true, Dict{Integer, Integer}(),
+    zeros(length(C.S)), zeros(length(C.A)))
+solve(V, C)
 
 results = load_object(joinpath(abspath(@__DIR__), "experiment_7_21_22", "eps100", "results.jld2"))
 los_a = results[5]
