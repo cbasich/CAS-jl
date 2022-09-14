@@ -19,8 +19,8 @@ function lookahead(solver, s, a)
     # for (sp, p) in T
         if haskey(solver.π, T[i][1])
             q += T[i][2] * V[T[i][1]]
-        else
-            q += T[i][2] * H[M.𝒮.D.SIndex[M.S[T[i][1]].state]]
+        # else
+        #     q += T[i][2] * H[M.𝒮.D.SIndex[M.S[T[i][1]].state]]
             # println(T[i][2], "|", H[M.𝒮.D.SIndex[M.S[T[i][1]].state]], "|", T[i][1])
             # println(q)
         end

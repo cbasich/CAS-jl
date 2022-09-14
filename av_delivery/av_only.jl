@@ -178,8 +178,7 @@ function generate_states(𝒢::Graph,
     G = Set{DomainState}()
 
     W = vec(collect(Base.product(
-        1:4, ["day", "night"], ["sunny", "rainy", "snowy"]
-    )))
+        1:4, ["day", "night"], ["sunny", "rainy", "snowy"])))
 
     for node_id in keys(N)
         node = N[node_id]
@@ -253,6 +252,40 @@ function generate_actions()
     return A
 end
 
+function competence(state, action)
+    if typeof(state) == EdgeState
+        if state.o && state.l == 1
+            return 0
+        else
+            return 2
+        end
+    else
+        if action.value == '⤉'
+            return 2
+        elseif action.value == '→'
+            if state.o && state.p && state.v > 1
+                return 0
+            else
+                return 2
+            end
+        else
+            if state.o
+                if state.p || state.v > 1
+                    return 0
+                else
+                    return 2
+                end
+            else
+                if state.p && state.v > 2
+                    return 0
+                else
+                    return 2
+                end
+            end
+        end
+    end
+end
+
 function generate_transitions!(M, G)
     S, A, T = M.S, M.A, M.T
 
@@ -266,6 +299,10 @@ function generate_transitions!(M, G)
 
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)
+                if competence(state, action) == 0
+                    T[s][a] = [(s, 1.0)]
+                    continue
+                end
                 if action.value == '←'
                     T[s][a] = left_turn_distribution(M, state, s, G)
                 elseif action.value == '→'
@@ -282,8 +319,16 @@ function generate_transitions!(M, G)
             end
         elseif typeof(state) == EdgeState
             for (a, action) in enumerate(A)
+                if competence(state, action) == 0
+                    T[s][a] = [(s, 1.0)]
+                    continue
+                end
                 if action.value == '↑'
-                    T[s][a] = continue_distribution(M, state, s, G)
+                    if state.r != "None"
+                        T[s][a] = [(s, 1.0)]
+                    else
+                        T[s][a] = continue_distribution(M, state, s, G)
+                    end
                 elseif action.value == '⤉'
                     T[s][a] = pass_obstruction_distribution(M, state, s, G)
                 else
@@ -585,7 +630,7 @@ function solve_model(M::DomainSSP)
     #                                     zeros(length(M.A)))
     # solve(ℒ, M, M.SIndex[M.s₀])
     # return ℒ
-    ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
+    ℒ = LAOStarSolver(10000, 1000., 1.0, .001, Dict{Integer, Integer}(),
                         zeros(length(M.S)), zeros(length(M.S)),
                         zeros(length(M.S)), zeros(length(M.A)),
                         [false for i=1:length(M.S)])

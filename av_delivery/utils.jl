@@ -1,6 +1,11 @@
 using CSV
 using DataFrames
 using FeatureSelectors
+using JLD2
+using StatsBase
+using CSV
+using DecisionTree
+using DataFrames
 # using Flux
 # using GLM
 
@@ -23,51 +28,69 @@ function record_data!(data, df)
 end
 
 function init_node_data(filepath)
-    data = DataFrame(p=Bool[], o=Bool[], v=Int[], a=Int[], t=String[], w=String[], sh=Int[], level=Int[], σ=Bool[])
-    for p in 0:1
-        for o in 0:1
-            for v in 0:3
-                for a in 1:4
-                    for t in ["day", "night"]
-                        for w in ["sunny", "rainy", "snowy"]
-                            for sh=1:2
-                                for l in 0:1
-                                    for y in 0:1
-                                        push!(data, [p o v a t w sh l y])
-                                        # d = vcat(d, [p o v l y])
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    record_data(data,filepath,false)
+    CSV.write(filepath,
+        DataFrame([false false 0 1 "day" "sunny" 1 1 1]);
+        header = vec(hcat(:p, :o, :v, :a, :t, :w, :sh, :level, :σ)))
+    # data = DataFrame(p=Bool[], o=Bool[], v=Int[], a=Int[], t=String[], w=String[], sh=Int[], level=Int[], σ=Bool[])
+    # for p in 0:1
+    #     for o in 0:1
+    #         for v in 0:3
+    #             for a in 1:4
+    #                 for t in ["day", "night"]
+    #                     for w in ["sunny", "rainy", "snowy"]
+    #                         for sh=1:2
+    #                             for l in 0:1
+    #                                 for y in 0:1
+    #                                     push!(data, [p o v a t w sh l y])
+    #                                     # d = vcat(d, [p o v l y])
+    #                                 end
+    #                             end
+    #                         end
+    #                     end
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
+    # record_data(data,filepath,false)
+end
+
+function init_cas_node_data(filepath)
+    CSV.write(filepath,
+        DataFrame([false false 0 1 "day" "sunny" 1 1]);
+        header = vec(hcat(:p, :o, :v, :a, :t, :w, :level, :σ)))
 end
 
 function init_edge_data(filepath)
-    data = DataFrame(o=Bool[], l=Int[], a=Int[], t=String[], w=String[], sh=Int[], level=Int[], σ=Bool[])
-    for o in 0:1
-        for n in 1:3
-            for a=1:4
-                for t in ["day", "night"]
-                    for w in ["sunny", "rainy", "snowy"]
-                        for sh=0:1
-                            for l in 0:1
-                                for y in 0:1
-                                    push!(data, [o n a t w sh l y])
-                                    # d = vcat(d, [o n l y])
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    record_data(data, filepath, false)
+    CSV.write(filepath,
+        DataFrame([false 1 1 "day" "sunny" 1 1 1]);
+        header = vec(hcat(:o, :l, :a, :t, :w, :sh, :level, :σ)))
+    # data = DataFrame(o=Bool[], l=Int[], a=Int[], t=String[], w=String[], sh=Int[], level=Int[], σ=Bool[])
+    # for o in 0:1
+    #     for n in 1:3
+    #         for a=1:4
+    #             for t in ["day", "night"]
+    #                 for w in ["sunny", "rainy", "snowy"]
+    #                     for sh=0:1
+    #                         for l in 0:1
+    #                             for y in 0:1
+    #                                 push!(data, [o n a t w sh l y])
+    #                                 # d = vcat(d, [o n l y])
+    #                             end
+    #                         end
+    #                     end
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
+    # record_data(data, filepath, false)
+end
+
+function init_cas_edge_data(filepath)
+    CSV.write(filepath,
+        DataFrame([false 1 1 "day" "sunny" 1 1]);
+        header = vec(hcat(:o, :l, :a, :t, :w, :level, :σ)))
 end
 
 # function init_edge_data(filepath)

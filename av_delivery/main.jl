@@ -1,6 +1,7 @@
 using Profile,ProfileView,JLD2
 include("utils.jl")
-include("competence_aware_system.jl")
+include("co_competence_aware_system.jl")
+include("comepetence_aware_system.jl")
 include("../LRTDPsolver.jl")
 include("../VISolver.jl")
 
@@ -156,7 +157,7 @@ function simulate(M::CASSP, L, m)
         episode_cost = 0.0
         while true
             s = M.SIndex[state]
-            @time a = solve(L, M, s)[1]
+            a = solve(L, M, s)[1]
             action = A[a]
             actions_taken += 1
             actions_at_competence += (action.l == competence(state.state, action.action))
@@ -291,7 +292,7 @@ function run_episodes(M, C)
     total_signals_received, total_signals_received2 = 0, 0
     expected_task_costs = Vector{Float64}()
     results = []
-    for i=1:20
+    for i=1:500
         # Set a random route.
         route, (init, goal) = rand(fixed_routes)
         w = generate_random_world_state()
@@ -363,7 +364,7 @@ function run_episodes(M, C)
         # end
 
         # Update model
-        if i == 10
+        if i%5 == 0
             update_feedback_profile!(C)
             update_autonomy_profile!(C, ℒ)
         end
@@ -404,7 +405,7 @@ function run_episodes(M, C)
     end
     save_autonomy_profile(C.𝒮.A.κ)
     # JLD2.save(joinpath(abspath(@__DIR__), "override_records.jld2"), "override_records", override_rate_records)
-    save_object(joinpath(abspath(@__DIR__), "override_records.jld2"), override_rate_records)
+    # save_object(joinpath(abspath(@__DIR__), "override_records.jld2"), override_rate_records)
 
     println(costs)
     println(stds)
@@ -443,7 +444,7 @@ V = ValueIterationSolver(.01, true, Dict{Integer, Integer}(),
     zeros(length(C.S)), zeros(length(C.A)))
 solve(V, C)
 
-results = load_object(joinpath(abspath(@__DIR__), "experiment_7_21_22", "eps100", "results.jld2"))
+results = load_object(joinpath(abspath(@__DIR__), "results.jld2"))
 los_a = results[5]
 los_r = results[6]
 # los_v = [x[2] for x in results[7]]

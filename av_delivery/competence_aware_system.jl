@@ -19,17 +19,14 @@ using JLD2
 using StatsBase
 
 include("domain_model.jl")
-
 struct CASstate
-       sh::Vector{Int}
     state::DomainState
         σ::Char
 end
 function ==(a::CASstate, b::CASstate)
-    return isequal(a.sh, b.sh) && isequal(a.state, b.state) && isequal(a.σ, b.σ)
+    return isequal(a.state, b.state) && isequal(a.σ, b.σ)
 end
 function Base.hash(a::CASstate, h::UInt)
-    h = hash(a.sh, h)
     h = hash(a.state, h)
     h = hash(a.σ, h)
     return h
@@ -70,10 +67,11 @@ function generate_autonomy_profile(𝒟::DomainSSP)
             else
                 if typeof(state) == NodeState && action.value == '⤉'
                     κ[s][a] = 2
+                elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
+                    κ[s][a] = 2
                 else
                     κ[s][a] = 1
                 end
-                # κ[s][a] = 1
             end
         end
     end
@@ -81,9 +79,8 @@ function generate_autonomy_profile(𝒟::DomainSSP)
 end
 
 function update_potential(C, ℒ, s, a, L)
-    state = CASstate([1, 1, 1] ,C.𝒮.D.S[s], '∅')
+    state = CASstate(C.𝒮.D.S[s], '∅')
     s2 = C.SIndex[state]
-    # println(s2, " | ", a)
     X = [lookahead(ℒ, s2, ((a - 1) * 3 + l + 1) ) for l ∈ L]
     P = softmax(-1.0 .* X)
     for l=1:size(L)[1]
@@ -112,12 +109,12 @@ function update_autonomy_profile!(C, ℒ)
             i = sample(aweights(distr))
 
             if L[i] == 2
-                if C.𝒮.F.λ[1][1][s][a][1]['∅'] < 0.85
+                if C.𝒮.F.λ[s][a][1]['∅'] < 0.85
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
             elseif L[i] == 0
-                if C.𝒮.F.λ[1][1][s][a][0]['⊕'] > 0.25
+                if C.𝒮.F.λ[s][a][0]['⊕'] > 0.25
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
@@ -138,7 +135,6 @@ end
 
 function competence(state::DomainState,
                    action::DomainAction)
-
     if typeof(state) == EdgeState
         if state.o && state.l == 1
             return 0
@@ -186,11 +182,7 @@ function autonomy_cost(state::CASstate)
     if state.σ == '⊕'
         return 0.0
     elseif state.σ == '∅'
-        if state.sh[3] == 2
-            return 2*(max(state.state.w.active_avs,1)) #1.0
-        else
-            return 2*(max(state.state.w.active_avs,1))
-        end
+        return 2*state.state.w.active_avs
     else
         return 2.0
     end
@@ -202,9 +194,9 @@ mutable struct OperatorModel
    SH::Set{Vector{Int}} # Operator state vector length n+1
    TH::Function
     Σ::Vector{Char}
-    λ::Dict{Int, Dict{Int, Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}}}
+    λ::Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}
     ρ::Function
-    D::Dict{Int, Dict{String, Dict{String, DataFrame}}}
+    D::Dict{String, Dict{String, DataFrame}}
     ϵ::Float64
 end
 
@@ -288,78 +280,116 @@ end
 function generate_feedback_profile(𝒟::DomainSSP,
                                    Σ::Vector{Char},
                                    L::Vector{Int},
-                                   D::Dict{Int, Dict{String, Dict{String, DataFrame}}})
+                                   D::Dict{String, Dict{String, DataFrame}})
     S, A = 𝒟.S, 𝒟.A
-    λ = Dict(o=>Dict(sh=>Dict(s=>Dict(a=>Dict(l=>Dict(σ => 0.5 for σ ∈ Σ)
-                                                               for l=0:1)
-                                                               for a=1:length(A))
-                                                               for s=1:length(S))
-                                                               for sh=1:2)
-                                                               for o=1:2)
-    for o=1:2
-        for (a, action) in enumerate(A)
-            X_n, Y_n = split_data(D[o]["node"][string(action.value)])
-            M_n = build_forest(Y_n, X_n, -1, 10, 0.5, -1)
-            if action.value ∈ ['↑', '⤉']
-                X_e, Y_e = split_data(D[o]["edge"][string(action.value)])
-                M_e = build_forest(Y_e, X_e, -1, 10, 0.5, -1)
-            end
-            for (s, state) in enumerate(S)
-                if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-                    continue
-                end
-                f = get_state_features(state)
-                for sh=1:2
-                    for l=0:1
-                        if typeof(state) == NodeState
-                            pred = apply_forest_proba(M_n, hcat(f,sh,l), [0,1])
-                        else
-                            pred = apply_forest_proba(M_e, hcat(f,sh,l), [0,1])
-                        end
-                        for σ in Σ
-                            if σ == '⊖' || σ == '⊘'
-                                λ[o][sh][s][a][l][σ] = 0.5 #pred[1]
-                            else
-                                λ[o][sh][s][a][l][σ] = 0.5 #pred[2]
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
+    λ = Dict(s => Dict(a => Dict(l => Dict(σ => 0.5 for σ ∈ Σ)
+                                                    for l=0:1)
+                                                    for a=1:length(A))
+                                                    for s=1:length(S))
+    # for (a, action) in enumerate(A)
+    #     X_n, Y_n = split_data(D["node"][string(action.value)])
+    #     M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
+    #     if action.value ∈ ['↑', '⤉']
+    #         X_e, Y_e = split_data(D["edge"][string(action.value)])
+    #         M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
+    #     end
+    #
+    #     for (s, state) in enumerate(S)
+    #         if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
+    #             continue
+    #         end
+    #         f = get_state_features(state)
+    #         for l in [0,1]
+    #             if typeof(state) == NodeState
+    #                 pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
+    #             else
+    #                 pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
+    #             end
+    #             for σ in Σ
+    #                 if σ == '⊖' || σ == '⊘'
+    #                     λ[s][a][l][σ] = pred[1]
+    #                 else
+    #                     try
+    #                         λ[s][a][l][σ] = pred[2]
+    #                     catch
+    #                         print(s, "|", a, "|", l)
+    #                     end
+    #                 end
+    #             end
+    #         end
+    #     end
+    # end
     return λ
 end
 
 function update_feedback_profile!(C)
     λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
     S, A = 𝒟.S, 𝒟.A
-    for o=1:2
-        for (a, action) in enumerate(A)
-            X_n, Y_n = split_data(D[o]["node"][string(action.value)])
+    for (a, action) in enumerate(A)
+        X_n, Y_n, M_n = missing, missing, missing
+        failed_to_build_node, failed_to_build_edge = false, false
+        try
+            X_n, Y_n = split_data(D["node"][string(action.value)])
             M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
-            if action.value ∈ ['↑', '⤉']
-                X_e, Y_e = split_data(D[o]["edge"][string(action.value)])
-                M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
-            end
+        catch
+            failed_to_build_node = true
+        end
 
-            for (s, state) in enumerate(S)
-                if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-                    continue
-                end
-                f = get_state_features(state)
-                for sh=1:2
-                    for l=0:1
-                        if typeof(state) == NodeState
-                            pred = apply_forest_proba(M_n, hcat(f,sh,l), [0,1])
-                        else
-                            pred = apply_forest_proba(M_e, hcat(f,sh,l), [0,1])
+        X_e, Y_e, M_e = missing, missing, missing
+        if action.value ∈ ['↑', '⤉']
+            try
+                X_e, Y_e = split_data(D["edge"][string(action.value)])
+                M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
+            catch
+                failed_to_build_edge = true
+            end
+        end
+
+        for (s, state) in enumerate(S)
+            if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
+                continue
+            end
+            f = get_state_features(state)
+            for l in [0,1]
+                if typeof(state) == NodeState
+                    if failed_to_build_node
+                        for σ ∈ Σ
+                            λ[s][a][l][σ] = 0.5
+                        end
+                        continue
+                    else
+                        pred = []
+                        try
+                            pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
+                        catch
+                            pred = [0.5 0.5]
                         end
                         for σ in Σ
                             if σ == '⊖' || σ == '⊘'
-                                λ[o][sh][s][a][l][σ] = pred[1]
+                                λ[s][a][l][σ] = pred[1]
                             else
-                                λ[o][sh][s][a][l][σ] = pred[2]
+                                λ[s][a][l][σ] = pred[2]
+                            end
+                        end
+                    end
+                else
+                    if failed_to_build_edge
+                        for σ ∈ Σ
+                            λ[s][a][l][σ] = 0.5
+                        end
+                        continue
+                    else
+                        pred = []
+                        try
+                            pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
+                        catch
+                            pred = [0.5 0.5]
+                        end
+                        for σ in Σ
+                            if σ == '⊖' || σ == '⊘'
+                                λ[s][a][l][σ] = pred[1]
+                            else
+                                λ[s][a][l][σ] = pred[2]
                             end
                         end
                     end
@@ -367,7 +397,6 @@ function update_feedback_profile!(C)
             end
         end
     end
-    return λ
 end
 
 function save_feedback_profile(λ)
@@ -379,18 +408,16 @@ function load_feedback_profile()
 end
 
 function save_data(D)
-    for o=1:2
-        for k in keys(D[o]["edge"])
-            record_data(D[o]["edge"][k], joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$k.csv"), false)
-        end
-        for k in keys(D[o]["node"])
-            record_data(D[o]["node"][k], joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$k.csv"), false)
-        end
+    for k in keys(D["edge"])
+        record_data(D["edge"][k], joinpath(abspath(@__DIR__), "data", "edge_$k.csv"), false)
+    end
+    for k in keys(D["node"])
+        record_data(D["node"][k], joinpath(abspath(@__DIR__), "data", "node_$k.csv"), false)
     end
 end
 
-function human_cost(sh, state::CASstate, action::CASaction)
-    return [1.0 1.0 0.0][action.l + 1]#[5. 1.5 .5 0.][action.l + 1]              #TODO: Fix this.
+function human_cost(state::CASstate, action::CASaction)
+    return [1.0 1.0 0.0][action.l + 1]
 end
 ##
 
@@ -440,33 +467,23 @@ end
 function generate_states(D, F)
     states = Vector{CASstate}()
     G = Set{CASstate}()
-    for sh in F.SH
-        for state in D.S
-            for σ in F.Σ
-                new_state = CASstate(sh, state, σ)
-                push!(states, new_state)
-                if state in D.G && σ == '⊕'
-                    push!(G, new_state)
-                end
+    for state in D.S
+        for σ in F.Σ
+            new_state = CASstate(state, σ)
+            push!(states, new_state)
+            if state in D.G && σ == '⊕'
+                push!(G, new_state)
             end
         end
     end
-    o1, o2 = rand(1:2), rand(1:2)
-    oa = (o1 == 1) ? 1 : 2
-    sh = [o1, o2, oa]
-    return states, CASstate(sh, D.s₀, '⊕'), G
+    return states, CASstate(D.s₀, '⊕'), G
 end
 
 function reset_problem!(D, C)
-    sh = generate_random_operator_state()
-    C.s₀ = CASstate(sh, D.s₀, '⊕')
+    C.s₀ = CASstate(D.s₀, '⊕')
     C.G = Set{CASstate}()
     for state in D.G
-        for σ in C.𝒮.F.Σ
-            for sh in C.𝒮.F.SH
-                push!(C.G, CASstate(sh, state, σ))
-            end
-        end
+        push!(C.G, CASstate(state, '⊕'))
     end
     generate_costs!(D)
     generate_costs!(C)
@@ -488,7 +505,7 @@ function generate_actions(D, A)
 end
 
 function allowed(C, s::Int, a::Int)
-    return C.A[a].l <= C.𝒮.A.κ[M.SIndex[C.S[s].state]][Int(ceil(a/3))]
+    return C.A[a].l <= C.𝒮.A.κ[C.𝒮.D.SIndex[C.S[s].state]][Int(ceil(a/3))]
 end
 
 function generate_transitions!(𝒟, 𝒜, ℱ, C,
@@ -498,15 +515,14 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
     T = C.T
     κ, λ = 𝒜.κ, ℱ.λ
-    for s = 1:length(S)#(s, state) in enumerate(S)
-        state = S[s]
+    for (s, state) in enumerate(S)
         if state.state.w != C.s₀.state.w
             continue
         end
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
         for (a, action) in enumerate(A)
-            if state in G
-                state′ = CASstate(state.sh, state.state, '⊕')
+            if state.state in 𝒟.G
+                state′ = CASstate(state.state, '⊕')
                 T[s][a] = [(C.SIndex[state′], 1.0)]
                 continue
             end
@@ -516,110 +532,63 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_s = 𝒟.SIndex[base_state]
             base_a = 𝒟.AIndex[base_action]
 
-            th = ℱ.TH(state.sh, base_state, base_action, action.l)
-
             t = 𝒟.T[base_s][base_a]
             if (t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a])
                 T[s][a] = Vector{Tuple{Int, Float64}}()
-                for i=1:length(th)
-                    push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                                    state.state, state.σ)], th[i][2]))
-                end
+                push!(T[s][a], (s, 1.0))
                 continue
             end
 
             T[s][a] = Vector{Tuple{Int, Float64}}()
             if action.l == 0
-                p_approval = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][0]['∅']
-                p_disapproval = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][0]['⊘']
+                p_approval = λ[base_s][base_a][0]['∅']
+                p_disapproval = λ[base_s][base_a][0]['⊘']
 
                 if typeof(state.state) == EdgeState
-                    for i=1:length(th)
-                        if state.state.o && action.action.value == '⤉'
-                            state′ = CASstate(th[i][1], EdgeState(state.state.u,
-                                    state.state.v, state.state.θ, false,
-                                    state.state.l, state.state.r, state.state.w), '∅')
-                            push!(T[s][a], (C.SIndex[state′], th[i][2] * p_approval))
-                            push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊘')], th[i][2] * p_disapproval))
-                        elseif !state.state.o && action.action.value == '↑'
-                            temp = []
-                            mass = 0.0
-                            for j=1:length(t)
-                                if typeof(𝒟.S[t[j][1]]) == NodeState
-                                    push!(temp, t[j])
-                                    mass += t[j][2]
-                                end
+                    if state.state.o && action.action.value == '⤉'
+                        state′ = CASstate(EdgeState(state.state.u,
+                                state.state.v, state.state.θ, false,
+                                state.state.l, state.state.r, state.state.w), '∅')
+                        push!(T[s][a], (C.SIndex[state′], p_approval))
+                        push!(T[s][a], (C.SIndex[CASstate(state.state, '⊘')], p_disapproval))
+                    elseif !state.state.o && action.action.value == '↑'
+                        temp = []
+                        mass = 0.0
+                        for j=1:length(t)
+                            if typeof(𝒟.S[t[j][1]]) == NodeState
+                                push!(temp, t[j])
+                                mass += t[j][2]
                             end
-                            for j=1:length(temp)
-                                state′ = CASstate(th[i][1], 𝒟.S[temp[j][1]], '∅')
-                                push!(T[s][a], (C.SIndex[state′], (temp[j][2]/mass)*p_approval*th[i][2]))
-                            end
-                            push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊘')], th[i][2]*p_disapproval))
-                        else
-                            T[s][a] = [(s, 1.0)]
-                            continue
                         end
+                        for j=1:length(temp)
+                            state′ = CASstate(𝒟.S[temp[j][1]], '∅')
+                            push!(T[s][a], (C.SIndex[state′], (temp[j][2]/mass)*p_approval))
+                        end
+                        push!(T[s][a], (C.SIndex[CASstate(state.state, '⊘')], p_disapproval))
+                    else
+                        T[s][a] = [(s, 1.0)]
+                        continue
                     end
-                    # if state.state.o
-                    #     for i=1:length(th)
-                    #         state′ = CASstate(th[i][1], EdgeState(state.state.u,
-                    #                 state.state.v, state.state.θ, false,
-                    #                 state.state.l, state.state.r, state.state.w), '∅')
-                    #         push!(T[s][a], (C.SIndex[state′], th[i][2] * p_approval))
-                    #         push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊘')], th[i][2] * p_disapproval))
-                    #     end
-                    # else
-                    #     for i=1:length(th)
-                    #         state′ = CASstate(th[i][1], state.state, '⊘')
-                    #         push!(T[s][a], (C.SIndex[state′], th[i][2]))
-                    #     end
-                    #     # for i=1:length(t)
-                    #     #     bstate′ = 𝒟.S[t[i][1]]
-                    #     #     if typeof(bstate′) == NodeState
-                    #     #         for j=1:length(th)
-                    #     #             state′ = CASstate(th[j][1], bstate′, '⊘')
-                    #     #             push!(T[s][a], (C.SIndex[state′], th[j][2]))
-                    #     #         end
-                    #     #         continue
-                    #     #     end
-                    #     # end
-                    # end
-                    # T[s][a] = [(C.SIndex[state′], 1.0)]
                 else
-                    for i = 1:length(th)
-                        for j = 1:length(t)
-                            push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                              𝒟.S[t[j][1]], '∅')], th[i][2] * t[j][2] * p_approval))
-                        end
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊘')], th[i][2] * p_disapproval))
+                    for j = 1:length(t)
+                        push!(T[s][a], (C.SIndex[CASstate(𝒟.S[t[j][1]], '∅')],
+                                        t[j][2] * p_approval))
                     end
-                    # # sp = (t[argmax([x[2] for x in t])][1]-1) * 4 + 4
-                    # state′ = 𝒟.S[t[argmax([x[2] for x in t])][1]]
-                    # for i=1:length(th)
-                    #     push!(T[s][a], (C.SIndex[CASstate(th[i][1], state′, '∅')],
-                    #                         th[i][2] * p_approval))
-                    #     push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊘')], (th[i][2] * p_disapproval)))
-                    # end
-                    # # T[s][a] = [((t[argmax([x[2] for x in t])][1]-1) * 4 + 4 , 1.0)]
+                    push!(T[s][a], (C.SIndex[CASstate(state.state, '⊘')], p_disapproval))
                 end
             elseif action.l == 1
-                p_approve = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][1]['⊕']
+                p_approve = λ[base_s][base_a][1]['⊕']
                 p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
-                for i=1:length(th)
-                    push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '⊖')],
-                                    th[i][2] * p_disapprove))
-                    for j=1:length(t)
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1], 𝒟.S[t[j][1]], '⊕')],
-                                th[i][2] * t[j][2] * p_approve))
-                    end
+                push!(T[s][a], (C.SIndex[CASstate(state.state, '⊖')],
+                                p_disapprove))
+                for j=1:length(t)
+                    push!(T[s][a], (C.SIndex[CASstate(𝒟.S[t[j][1]], '⊕')],
+                                t[j][2] * p_approve))
                 end
             else
-                for i=1:length(th)
-                    for j=1:length(t)
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                                𝒟.S[t[j][1]], '⊕')], th[i][2] * t[j][2]))
-                        # push!(T[s][a], ((sp-1) * 4 + 4, p))
-                    end
+                for j=1:length(t)
+                    push!(T[s][a], (C.SIndex[CASstate(
+                            𝒟.S[t[j][1]], '⊕')], t[j][2]))
                 end
             end
         end
@@ -629,9 +598,6 @@ end
 function check_transition_validity(C)
     S, A, T = C.S, C.A, C.T
     for (s, state) in enumerate(S)
-        if state.state.w != C.s₀.state.w
-            continue
-        end
         for (a, action) in enumerate(A)
             mass = 0.0
             for (s′, p) in T[s][a]
@@ -659,7 +625,7 @@ end
 function block_transition!(C::CASSP,
                        state::CASstate,
                       action::CASaction)
-    state′ = CASstate(state.sh, state.state, '⊕')
+    state′ = CASstate(state.state, '⊕')
     s, a = C.SIndex[state′], C.AIndex[action]
     # TODO: why do we not block C.T[s][a] as well? Not understanding...
     C.T[s][a] = [(s, 1.0)]
@@ -675,7 +641,7 @@ function generate_costs(C::CASSP,
     state, action = C.S[s], C.A[a]
     cost = D.C[D.SIndex[state.state]][D.AIndex[action.action]]
     cost += A.μ(state)
-    cost += F.ρ(state.sh, state, action)
+    cost += F.ρ(state, action)
     return cost
 end
 
@@ -690,8 +656,8 @@ end
 
 function generate_feedback(state::CASstate,
                           action::CASaction,
+                              sh,
                                ϵ::Float64)
-    sh = state.sh
     # Request for ToC logic
     if action.l == 0
         if sh[3] == 1 # Local operator always accepts
@@ -726,12 +692,12 @@ function generate_feedback(state::CASstate,
       return (action.l == 1) ? '⊕' : '∅'
     end
 
-    if rand() < 1 - get_consistency(state.sh)
+    if rand() < 1 - get_consistency(sh)
         return ['⊕', '⊖'][rand(1:2)]
     end
 
-    if state.sh[3] == 2
-        if state.sh[2] == 1
+    if sh[3] == 2
+        if sh[2] == 1
             if (state.state.w.time == "night" && state.state.w.weather == "snowy")
                 return (action.l == 1) ? '⊖' : '⊘'
             end
@@ -787,9 +753,7 @@ function generate_successor(M::DomainSSP,
     for (s′, prob) ∈ T
         p += prob
         if p >= thresh
-            TH = human_state_transition(state.sh, state.state, action.action, action.l)
-            sh = sample(first.(TH), aweights(last.(TH)))
-            return CASstate(sh, M.S[s′], σ)
+            return CASstate(M.S[s′], σ)
         end
     end
 end
@@ -824,7 +788,7 @@ function compute_level_optimality(C, ℒ)
     # for s in keys(ℒ.π)
     R = reachable(C, ℒ)
     for (s, state) in enumerate(C.S)
-        if terminal(C, state)
+        if terminal(C, state) || state.state.w != C.s₀.state.w
             continue
         end
         solve(ℒ, C, s)
@@ -855,19 +819,15 @@ function build_cas(𝒟::DomainSSP,
     end
     𝒜 = AutonomyModel(L, κ, autonomy_cost)
 
-    D = Dict{Int, Dict{String, Dict{String, DataFrame}}}()
+    D = Dict{String, Dict{String, DataFrame}}()
 
-    for o=1:2
-        D[o] = Dict("node"=> Dict{Int, Dict{String, DataFrame}}(),
-                    "edge"=> Dict{Int, Dict{String, DataFrame}}())
-        for a in ["↑", "→", "↓", "←", "⤉"]
-            D[o]["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$a.csv")))
-            D[o]["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$a.csv")))
-        end
-        # D[o] = Dict("edge"=> Dict{Int, Dict{String, DataFrame}}())
-        # for a in ["↑", "⤉"]
-        #     D[o]["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$a.csv")))
-        # end
+    D["node"] = Dict{String, DataFrame}()
+    for a in ["↑", "→", "↓", "←", "⤉"]
+        D["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "node_$a.csv")))
+    end
+    D["edge"] = Dict{String, DataFrame}()
+    for a in ["↑", "⤉"]
+        D["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "edge_$a.csv")))
     end
     λ = generate_feedback_profile(𝒟, Σ, L, D)
 
@@ -881,18 +841,13 @@ function build_cas(𝒟::DomainSSP,
     C = CASSP(𝒮, S, A, T, costs, s₀, G)
     generate_costs!(C)
     generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
-    check_transition_validity(C)
+    # check_transition_validity(C)
     return C
 end
 
 function solve_model(C::CASSP)
     L = solve_model(C.𝒮.D)
-    # H = [L.V[M.SIndex[state.state]] for (s,state) in enumerate(C.S)]
-    # ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
-    #                     zeros(length(C.S)), zeros(length(C.S)),
-    #                     H, zeros(length(C.A)),
-    #                     [false for i=1:length(C.S)])
-    ℒ = LRTDPsolver(C, 1000., 10000, .01, Dict{Int, Int}(),
+    ℒ = LRTDPsolver(C, 10000., 1000, .01, Dict{Int, Int}(),
                      false, Set{Int}(), L.V, zeros(length(C.S)),
                                              zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])
@@ -900,15 +855,12 @@ function solve_model(C::CASSP)
 end
 
 function init_data()
-    for o=1:2
-        for action in ["←", "↑", "→", "↓", "⤉"]
-            init_node_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$action.csv"))
-            init_edge_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$action.csv"))
-        end
-        #
-        # init_edge_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_↑.csv"))
-        # init_edge_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_⤉.csv"))
+    for action in ["←", "↑", "→", "↓", "⤉"]
+        init_cas_node_data(joinpath(abspath(@__DIR__), "data", "node_$action.csv"))
     end
+
+    init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "edge_↑.csv"))
+    init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "edge_⤉.csv"))
 end
 
 function set_route(M, C, init, goal, w)

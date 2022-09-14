@@ -122,7 +122,7 @@ function solve(ℒ::LAOStarSolver,
     error = ℒ.dead_end_cost
 
     visited = Set{Integer}()
-    while true
+    while iter < ℒ.max_iter
         while true
             empty!(visited)
             num_expanded = expand(ℒ, M, s, visited)
