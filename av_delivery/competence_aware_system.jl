@@ -337,17 +337,18 @@ function generate_cas_feedback_profile(𝒟::DomainSSP,
     Threads.@threads for s=1:length(S)
         state = S[s]
         for a=1:length(A)
+            action = A[a]
             for l=0:1
                 σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
                 if σ == '⊕'
                     λ[s][a][l]['⊕'] = .8333
-                    λ[s][a][l]['⊖'] = 2.
+                    λ[s][a][l]['⊖'] = 1. - .8333
                 elseif σ == '⊖'
-                    λ[s][a][l]['⊕'] = 2.
+                    λ[s][a][l]['⊕'] = 1. - .8333
                     λ[s][a][l]['⊖'] = .8333
                 elseif σ == '∅'
                     λ[s][a][l]['∅'] = .8333
-                    λ[s][a][l]['⊘'] = 2.
+                    λ[s][a][l]['⊘'] = 1. - .8333
                 else
                     λ[s][a][l]['∅'] = 0.
                     λ[s][a][l]['⊘'] = 1.
@@ -699,7 +700,7 @@ end
 
 function check_transition_validity(C)
     S, A, T = C.S, C.A, C.T
-    for (s, state) in enumerate(S)
+    for s in keys(T)
         for (a, action) in enumerate(A)
             mass = 0.0
             for (s′, p) in T[s][a]
