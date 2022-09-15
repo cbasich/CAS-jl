@@ -338,17 +338,20 @@ function generate_cas_feedback_profile(𝒟::DomainSSP,
         state = S[s]
         for a=1:length(A)
             for l=0:1
-                if competence(state, A[a]) == 2
-                    p_approval = .8333
-                    p_disapproval = 1. - p_approval
+                σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
+                if σ == '⊕'
+                    λ[s][a][l]['⊕'] = .8333
+                    λ[s][a][l]['⊖'] = 2.
+                elseif σ == '⊖'
+                    λ[s][a][l]['⊕'] = 2.
+                    λ[s][a][l]['⊖'] = .8333
+                elseif σ == '∅'
+                    λ[s][a][l]['∅'] = .8333
+                    λ[s][a][l]['⊘'] = 2.
                 else
-                    p_disapproval = .8333
-                    p_approval = 1. - p_disapproval
+                    λ[s][a][l]['∅'] = 0.
+                    λ[s][a][l]['⊘'] = 1.
                 end
-                λ[s][a][l]['⊕'] = p_approval
-                λ[s][a][l]['∅'] = p_approval
-                λ[s][a][l]['⊖'] = p_disapproval
-                λ[s][a][l]['⊘'] = p_disapproval
             end
         end
     end
@@ -933,7 +936,7 @@ function build_cas(𝒟::DomainSSP,
     C = CASSP(𝒮, S, A, T, costs, s₀, G)
     generate_costs!(C)
     generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
-    # check_transition_validity(C)
+    check_transition_validity(C)
     return C
 end
 

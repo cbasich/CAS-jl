@@ -21,7 +21,7 @@ function simulate(COCAS, L, num_runs)
             # println("$i   |   Taking action $action in state $state with operator $sh.")
             σ = '⊕'
             if action.l == 0
-                σ = generate_feedback(state, action, sh, get_consistency(sh))
+                σ = generate_feedback(state, action, get_consistency(sh))
             end
 
             episode_cost += C[s][a]

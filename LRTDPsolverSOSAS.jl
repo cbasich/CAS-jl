@@ -1,6 +1,6 @@
 using Base
 
-mutable struct LRTDPsolver
+mutable struct LRTDPsolverSOSAS
     M
     dead_end_cost::Float64
     max_trials::Int
@@ -14,7 +14,12 @@ mutable struct LRTDPsolver
 end
 
 function lookahead(solver, s, a)
-    q, V, H, M, T = 0., solver.V, solver.H, solver.M, solver.M.T[s][a]
+    q, V, H, M = 0., solver.V, solver.H, solver.M
+    if typeof(solver.M) == SOSAS
+        T = get_transition(M, s, a)
+    else
+        T = solver.M.T[s][a]
+    end
     for i = 1:length(T)
     # for (sp, p) in T
         if haskey(solver.π, T[i][1])
@@ -26,6 +31,9 @@ function lookahead(solver, s, a)
         end
     end
     # return q + solver.M.C(solver.M, s, a)
+    if typeof(solver.M) == SOSAS
+        return q + generate_costs(solver.M, solver.M.L1, solver.M.L2, s, a)
+    end
     return q + solver.M.C[s][a]
 end
 
@@ -95,9 +103,14 @@ function trial(solver, s)
         bellman_update(solver, s)
 
         a = solver.π[s]
-        total_cost += M.C[s][a]
-        # println(a)
-        s = generate_successor(M.T[s][a])
+        if typeof(solver.M) == SOSAS
+            total_cost += generate_costs(solver.M, solver.M.L1, solver.M.L2, s, a)
+            s = generate_successor(get_transition(solver.M, s, a))
+        else
+            total_cost += M.C[s][a]
+            # println(a)
+            s = generate_successor(M.T[s][a])
+        end
     end
 
     if solver.dont_label
@@ -137,7 +150,13 @@ function check_solved(solver, s)
             rv = false
         end
 
-        for (sp, p) in solver.M.T[s][a]
+        if typeof(solver.M) == SOSAS
+            T = get_transition(solver.M, s, a)
+        else
+            T = solver.M.T[s][a]
+        end
+
+        for (sp, p) in T #solver.M.T[s][a]
             if sp ∉ solver.solved && sp ∉ _open && sp ∉ _closed
                 push!(_open, sp)
             end

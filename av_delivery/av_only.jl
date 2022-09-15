@@ -119,6 +119,7 @@ function Base.hash(a::EdgeState, h::UInt)
     h = hash(a.v, h)
     h = hash(a.o, h)
     h = hash(a.l, h)
+    h = hash(a.r, h)
     h = hash(a.w, h)
     return h
 end
