@@ -1,7 +1,9 @@
 include("utils.jl")
 include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
+include("co_competence_aware_system.jl")
 include("competence_aware_system.jl")
+
 
 function simulate(CAS, L, num_runs)
     S, A, C = CAS.S, CAS.A, CAS.C
@@ -25,6 +27,13 @@ function simulate(CAS, L, num_runs)
             end
 
             episode_cost += C[s][a]
+
+            # remove incorrect autonomy cost
+            episode_cost -= autonomy_cost(state)
+
+            # add correct autonomy cost
+            episode_cost += autonomy_cost(COCASstate(sh, state.state, state.σ))
+
             TH = human_state_transition(sh, state.state, action.action, action.l)
             sh = sample(first.(TH), aweights(last.(TH)))
             state = generate_successor(CAS.𝒮.D, state, action, σ)

@@ -178,7 +178,7 @@ function generate_states(𝒢::Graph,
     G = Set{DomainState}()
 
     W = vec(collect(Base.product(
-        1:4, ["day", "night"], ["sunny", "rainy", "snowy"]
+        0:3, ["day", "night"], ["sunny", "rainy", "snowy"]
     )))
 
     for node_id in keys(N)
@@ -263,41 +263,45 @@ function generate_transitions!(M, G)
                 T[s][a] = [(s, 1.0)]
             end
         end
-
+        w = WorldState(state.w.active_avs + 1, state.w.time, state.w.weather)
+        if w.active_avs == 4
+            w = WorldState(0, state.w.time, state.w.weather)
+        end
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)
                 if action.value == '←'
-                    T[s][a] = left_turn_distribution(M, state, s, G)
+                    T[s][a] = left_turn_distribution(M, state, s, G, w)
                 elseif action.value == '→'
-                    T[s][a] = right_turn_distribution(M, state, s, G)
+                    T[s][a] = right_turn_distribution(M, state, s, G, w)
                 elseif action.value == '↑'
-                    T[s][a] = go_straight_distribution(M, state, s, G)
+                    T[s][a] = go_straight_distribution(M, state, s, G, w)
                 elseif action.value == '↓'
                     state′ = NodeState(state.id, state.p, state.o, state.v,
-                                       change_direction(state.θ, '↓'), state.w)
+                                       change_direction(state.θ, '↓'), w)
                     T[s][a] = [(M.SIndex[state′], 1.0)]
                 else
-                    T[s][a] = wait_distribution(M, state, s, G)
+                    T[s][a] = wait_distribution(M, state, s, G, w)
                 end
             end
         elseif typeof(state) == EdgeState
             for (a, action) in enumerate(A)
                 if action.value == '↑'
-                    T[s][a] = continue_distribution(M, state, s, G)
+                    T[s][a] = continue_distribution(M, state, s, G, w)
                 elseif action.value == '⤉'
-                    T[s][a] = pass_obstruction_distribution(M, state, s, G)
+                    T[s][a] = pass_obstruction_distribution(M, state, s, G, w)
                 else
-                    T[s][a] = [(s, 1.0)]
+                    state′ = EdgeState(state.u, state.v, state.θ,
+                                       state.o, state.l, state.r, w)
+                    T[s][a] = [(M.SIndex[state′], 1.0)]
                 end
             end
         end
     end
 end
 
-function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
     θ′ = change_direction(state.θ, '←')
-
     N, E = G.nodes, G.edges
 
     dest_id = N[state.id][θ′]
@@ -310,19 +314,18 @@ function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gra
         else
             r = "None"
         end
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
 end
 
-function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
     θ′ = change_direction(state.θ, '→')
-
     N, E = G.nodes, G.edges
 
     dest_id = N[state.id][θ′]
@@ -335,18 +338,17 @@ function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gr
         else
             r = "None"
         end
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
 end
 
-function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
-
     N, E = G.nodes, G.edges
     dest_id = N[state.id][state.θ]
 
@@ -359,43 +361,43 @@ function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::G
         else
             r = "None"
         end
-        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
 end
 
-function wait_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function wait_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph, w::WorldState)
     S = M.S
     T = Vector{Tuple{Int, Float64}}()
-
     node = G.nodes[state.id]
     p_ped = node["pedestrian probability"]
     p_occl = node["occlusion probability"]
     p_vehicles = node["vehicle probabilities"]
 
     for num_vehicle in [0,1,2,3]
-        state′ = NodeState(state.id, false, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, false, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, true, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, true, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, false, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, false, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, true, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, true, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
     return T
 end
 
-function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph, w::WorldState)
     if state.o == true
-        return [(s, 1.0)]
+        state′  = EdgeState(state.u, state.v, state.θ, state.o, state.l, state.r, w)
+        state′′ = EdgeState(state.u, state.v, state.θ, false, state.l, state.r, w)
+        return [(M.SIndex[state′], 0.9), (M.SIndex[state′′], 0.1)]
     end
     T = Vector{Tuple{Int, Float64}}()
-
     N, E = G.nodes, G.edges
 
     # edge = E[state.u][state.v]
@@ -423,29 +425,28 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
     p_vehicles = node["vehicle probabilities"]
 
     for num_vehicle in [0,1,2,3]
-        state′ = NodeState(state.v, false, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, false, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, true, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, true, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, false, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, false, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, true, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, true, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
 
     return T
 end
 
-function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
-
     N, E = G.nodes, G.edges
 
     if state.o == false
         return [(s, 1.0)]
     else
         num_lanes = E[state.u][state.v]["num lanes"]
-        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes, state.r, state.w)
+        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes, state.r, w)
         s′ = M.SIndex[state′]
         p = 1.0
         if num_lanes == 1
@@ -456,7 +457,10 @@ function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int,
             p = 0.8
         end
         push!(T, (s′, p))
-        push!(T, (s, (1-p)))
+
+        statew = EdgeState(state.u, state.v, state.θ,
+                           state.o, state.l, state.r, w)
+        push!(T, (M.SIndex[statew], (1-p)))
     end
 
     return T

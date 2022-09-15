@@ -192,7 +192,7 @@ function autonomy_cost(state::CASstate)
     if state.σ == '⊕'
         return 0.0
     elseif state.σ == '∅'
-        return 2*state.state.w.active_avs
+        return state.state.w.active_avs
     else
         return 2.0
     end
@@ -200,97 +200,134 @@ end
 ##
 
 ##
-mutable struct OperatorModel
-   SH::Set{Vector{Int}} # Operator state vector length n+1
-   TH::Function
-    Σ::Vector{Char}
-    λ::Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}
-    ρ::Function
-    D::Dict{String, Dict{String, DataFrame}}
-    ϵ::Float64
-end
+# mutable struct OperatorModel
+#    SH::Set{Vector{Int}} # Operator state vector length n+1
+#    TH::Function
+#     Σ::Vector{Char}
+#     λ::Dict{Int, Dict{Int, Dict{Int, Dict{Char, Float64}}}}
+#     ρ::Function
+#     D::Dict{String, Dict{String, DataFrame}}
+#     ϵ::Float64
+# end
 
-function generate_random_operator_state()
-    o1, o2 = sample(1:2), sample(1:2)
-    oa = (o1 == 1) ? 1 : 2
-    return [o1, o2, oa]
-end
+# function generate_random_operator_state()
+#     o1, o2 = sample(1:2), sample(1:2)
+#     oa = (o1 == 1) ? 1 : 2
+#     return [o1, o2, oa]
+# end
 
-function human_state_transition(sh, s, a, l)
-    o1, o2, oa = sh[1], sh[2], sh[3]
+# function human_state_transition(sh, s, a, l)
+#     o1, o2, oa = sh[1], sh[2], sh[3]
+#
+#     T = Vector{Tuple{Vector, Float32}}()
+#     if o1 == 1 # Local operator available --> state is [1, x, 1]
+#         # Local operator becomes busy (only happens if not using operator)
+#         p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
+#
+#         if o2 == 1
+#             push!(T, ([2, 1, 2], p_becomes_busy * 0.75))
+#             push!(T, ([2, 2, 2], p_becomes_busy * 0.25))
+#             push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.75))
+#             push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.25))
+#         else
+#             push!(T, ([2, 1, 2], p_becomes_busy * 0.25))
+#             push!(T, ([2, 2, 2], p_becomes_busy * 0.75))
+#             push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
+#             push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
+#         end
+#
+#     else # Local operator unavailable --> state is [2, x, 2]
+#         p_becomes_active = (0.5)^s.w.active_avs
+#         if o2 == 1
+#             push!(T, ([1, 1, 1], p_becomes_active * 0.75))
+#             push!(T, ([1, 2, 1], p_becomes_active * 0.25))
+#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.75))
+#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.25))
+#         else
+#             push!(T, ([1, 1, 1], p_becomes_active * 0.25))
+#             push!(T, ([1, 2, 1], p_becomes_active * 0.75))
+#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.25))
+#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.75))
+#         end
+#     end
+#     return T
+# end
 
-    T = Vector{Tuple{Vector, Float32}}()
-    if o1 == 1 # Local operator available --> state is [1, x, 1]
-        if l == 2
-            # Local operator becomes busy (only happens if not using operator)
-            p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
-            # Global operator takes over.
-            if o2 == 1
-                push!(T, ([2, 1, 2], p_becomes_busy * 0.75))
-                push!(T, ([2, 2, 2], p_becomes_busy * 0.25))
-                push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.75))
-                push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.25))
-            else
-                push!(T, ([2, 1, 2], p_becomes_busy * 0.25))
-                push!(T, ([2, 2, 2], p_becomes_busy * 0.75))
-                push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
-                push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
-            end
-        else
-            if o2 == 1
-                push!(T, ([1, 1, 1], 0.75))
-                push!(T, ([1, 2, 1], 0.25))
-            else
-                push!(T, ([1, 1, 1], 0.25))
-                push!(T, ([1, 2, 1], 0.75))
-            end
-        end
-    else # Local operator unavailable --> state is [2, x, 2]
-        p_becomes_active = (0.5)^s.w.active_avs
-        if o2 == 1
-            push!(T, ([1, 1, 1], p_becomes_active * 0.75))
-            push!(T, ([1, 2, 1], p_becomes_active * 0.25))
-            push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.75))
-            push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.25))
-        else
-            push!(T, ([1, 1, 1], p_becomes_active * 0.25))
-            push!(T, ([1, 2, 1], p_becomes_active * 0.75))
-            push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.25))
-            push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.75))
-        end
-    end
-    return T
-end
+# function human_state_transition(sh, s, a, l)
+#     o1, o2, oa = sh[1], sh[2], sh[3]
+#
+#     T = Vector{Tuple{Vector, Float32}}()
+#     if o1 == 1 # Local operator available --> state is [1, x, 1]
+#         if l == 2
+#             # Local operator becomes busy (only happens if not using operator)
+#             p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
+#             # Global operator takes over.
+#             if o2 == 1
+#                 push!(T, ([2, 1, 2], p_becomes_busy * 0.75))
+#                 push!(T, ([2, 2, 2], p_becomes_busy * 0.25))
+#                 push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.75))
+#                 push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.25))
+#             else
+#                 push!(T, ([2, 1, 2], p_becomes_busy * 0.25))
+#                 push!(T, ([2, 2, 2], p_becomes_busy * 0.75))
+#                 push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
+#                 push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
+#             end
+#         else
+#             if o2 == 1
+#                 push!(T, ([1, 1, 1], 0.75))
+#                 push!(T, ([1, 2, 1], 0.25))
+#             else
+#                 push!(T, ([1, 1, 1], 0.25))
+#                 push!(T, ([1, 2, 1], 0.75))
+#             end
+#         end
+#     else # Local operator unavailable --> state is [2, x, 2]
+#         p_becomes_active = (0.5)^s.w.active_avs
+#         if o2 == 1
+#             push!(T, ([1, 1, 1], p_becomes_active * 0.75))
+#             push!(T, ([1, 2, 1], p_becomes_active * 0.25))
+#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.75))
+#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.25))
+#         else
+#             push!(T, ([1, 1, 1], p_becomes_active * 0.25))
+#             push!(T, ([1, 2, 1], p_becomes_active * 0.75))
+#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.25))
+#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.75))
+#         end
+#     end
+#     return T
+# end
 
-function get_consistency(sh)
-    o1, o2, oa = sh[1],sh[2],sh[3]
-    if oa == 1
-        return 1.0
-    else
-        if o2 == 1
-            return 0.8
-        else
-            return 0.7
-        end
-    end
-end
+# function get_consistency(sh)
+#     o1, o2, oa = sh[1],sh[2],sh[3]
+#     if oa == 1
+#         return 1.0
+#     else
+#         if o2 == 1
+#             return 0.8
+#         else
+#             return 0.7
+#         end
+#     end
+# end
 
-function set_consistency(F::OperatorModel, ϵ)
-    F.ϵ = ϵ
-end
+# function set_consistency(F::OperatorModel, ϵ)
+#     F.ϵ = ϵ
+# end
 
-function get_state_features(state::DomainState)
-    if typeof(state) == NodeState
-        return [state.p state.o state.v state.w.active_avs state.w.time state.w.weather]
-    else
-        return [state.o state.l state.w.active_avs state.w.time state.w.weather]
-    end
-end
+# function get_state_features(state::DomainState)
+#     if typeof(state) == NodeState
+#         return [state.p state.o state.v state.w.active_avs state.w.time state.w.weather]
+#     else
+#         return [state.o state.l state.w.active_avs state.w.time state.w.weather]
+#     end
+# end
 
-function generate_feedback_profile(𝒟::DomainSSP,
-                                   Σ::Vector{Char},
-                                   L::Vector{Int},
-                                   D::Dict{String, Dict{String, DataFrame}})
+function generate_cas_feedback_profile(𝒟::DomainSSP,
+                                       Σ::Vector{Char},
+                                       L::Vector{Int},
+                                       D::Dict{String, Dict{String, DataFrame}})
     S, A = 𝒟.S, 𝒟.A
     λ = Dict(s => Dict(a => Dict(l => Dict(σ => 0.5 for σ ∈ Σ)
                                                     for l=0:1)
@@ -351,99 +388,99 @@ function generate_feedback_profile(𝒟::DomainSSP,
     return λ
 end
 
-function update_feedback_profile!(C)
-    λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
-    S, A = 𝒟.S, 𝒟.A
-    for (a, action) in enumerate(A)
-        X_n, Y_n, M_n = missing, missing, missing
-        failed_to_build_node, failed_to_build_edge = false, false
-        try
-            X_n, Y_n = split_data(D["node"][string(action.value)])
-            M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
-        catch
-            failed_to_build_node = true
-        end
+# function update_feedback_profile!(C)
+#     λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
+#     S, A = 𝒟.S, 𝒟.A
+#     for (a, action) in enumerate(A)
+#         X_n, Y_n, M_n = missing, missing, missing
+#         failed_to_build_node, failed_to_build_edge = false, false
+#         try
+#             X_n, Y_n = split_data(D["node"][string(action.value)])
+#             M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
+#         catch
+#             failed_to_build_node = true
+#         end
+#
+#         X_e, Y_e, M_e = missing, missing, missing
+#         if action.value ∈ ['↑', '⤉']
+#             try
+#                 X_e, Y_e = split_data(D["edge"][string(action.value)])
+#                 M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
+#             catch
+#                 failed_to_build_edge = true
+#             end
+#         end
+#
+#         for (s, state) in enumerate(S)
+#             if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
+#                 continue
+#             end
+#             f = get_state_features(state)
+#             for l in [0,1]
+#                 if typeof(state) == NodeState
+#                     if failed_to_build_node
+#                         for σ ∈ Σ
+#                             λ[s][a][l][σ] = 0.5
+#                         end
+#                         continue
+#                     else
+#                         pred = []
+#                         try
+#                             pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
+#                         catch
+#                             pred = [0.5 0.5]
+#                         end
+#                         for σ in Σ
+#                             if σ == '⊖' || σ == '⊘'
+#                                 λ[s][a][l][σ] = pred[1]
+#                             else
+#                                 λ[s][a][l][σ] = pred[2]
+#                             end
+#                         end
+#                     end
+#                 else
+#                     if failed_to_build_edge
+#                         for σ ∈ Σ
+#                             λ[s][a][l][σ] = 0.5
+#                         end
+#                         continue
+#                     else
+#                         pred = []
+#                         try
+#                             pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
+#                         catch
+#                             pred = [0.5 0.5]
+#                         end
+#                         for σ in Σ
+#                             if σ == '⊖' || σ == '⊘'
+#                                 λ[s][a][l][σ] = pred[1]
+#                             else
+#                                 λ[s][a][l][σ] = pred[2]
+#                             end
+#                         end
+#                     end
+#                 end
+#             end
+#         end
+#     end
+# end
 
-        X_e, Y_e, M_e = missing, missing, missing
-        if action.value ∈ ['↑', '⤉']
-            try
-                X_e, Y_e = split_data(D["edge"][string(action.value)])
-                M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
-            catch
-                failed_to_build_edge = true
-            end
-        end
+# function save_feedback_profile(λ)
+#     save_object(joinpath(abspath(@__DIR__),"params.jld2"), λ)
+# end
+#
+# function load_feedback_profile()
+#     return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
+# end
 
-        for (s, state) in enumerate(S)
-            if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-                continue
-            end
-            f = get_state_features(state)
-            for l in [0,1]
-                if typeof(state) == NodeState
-                    if failed_to_build_node
-                        for σ ∈ Σ
-                            λ[s][a][l][σ] = 0.5
-                        end
-                        continue
-                    else
-                        pred = []
-                        try
-                            pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
-                        catch
-                            pred = [0.5 0.5]
-                        end
-                        for σ in Σ
-                            if σ == '⊖' || σ == '⊘'
-                                λ[s][a][l][σ] = pred[1]
-                            else
-                                λ[s][a][l][σ] = pred[2]
-                            end
-                        end
-                    end
-                else
-                    if failed_to_build_edge
-                        for σ ∈ Σ
-                            λ[s][a][l][σ] = 0.5
-                        end
-                        continue
-                    else
-                        pred = []
-                        try
-                            pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
-                        catch
-                            pred = [0.5 0.5]
-                        end
-                        for σ in Σ
-                            if σ == '⊖' || σ == '⊘'
-                                λ[s][a][l][σ] = pred[1]
-                            else
-                                λ[s][a][l][σ] = pred[2]
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-function save_feedback_profile(λ)
-    save_object(joinpath(abspath(@__DIR__),"params.jld2"), λ)
-end
-
-function load_feedback_profile()
-    return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
-end
-
-function save_data(D)
-    for k in keys(D["edge"])
-        record_data(D["edge"][k], joinpath(abspath(@__DIR__), "data", "edge_$k.csv"), false)
-    end
-    for k in keys(D["node"])
-        record_data(D["node"][k], joinpath(abspath(@__DIR__), "data", "node_$k.csv"), false)
-    end
-end
+# function save_data(D)
+#     for k in keys(D["edge"])
+#         record_data(D["edge"][k], joinpath(abspath(@__DIR__), "data", "edge_$k.csv"), false)
+#     end
+#     for k in keys(D["node"])
+#         record_data(D["node"][k], joinpath(abspath(@__DIR__), "data", "node_$k.csv"), false)
+#     end
+# end
 
 function human_cost(state::CASstate, action::CASaction)
     return [1.0 1.0 0.0][action.l + 1]
@@ -545,7 +582,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
     T = C.T
     κ, λ = 𝒜.κ, ℱ.λ
     for (s, state) in enumerate(S)
-        if state.state.w != C.s₀.state.w
+        if state.state.w.time != C.s₀.state.w.time || state.state.w.weather != C.s₀.state.w.weather
             continue
         end
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
@@ -851,7 +888,7 @@ function build_cas(𝒟::DomainSSP,
     𝒜 = AutonomyModel(L, κ, autonomy_cost)
 
     D = Dict{String, Dict{String, DataFrame}}()
-    λ = generate_feedback_profile(𝒟, Σ, L, D)
+    λ = generate_cas_feedback_profile(𝒟, Σ, L, D)
 
     SH = Set([i for i in x] for x in vec(collect(Base.product(1:2, 1:2, 1:2))))
     ℱ = OperatorModel(SH, human_state_transition, Σ, λ, human_cost, D, 0.9)
