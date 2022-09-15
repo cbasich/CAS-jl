@@ -346,46 +346,56 @@ function generate_feedback_profile(𝒟::DomainSSP,
     Threads.@threads for s=1:length(S)
         state = S[s]
         for a=1:length(A)
+            action = A[a]
             for o=1:2
                 for sh=1:2
                     for l=0:1
                         if o == 1
-                            if competence(state, A[a]) == 2
+                            σ = generate_feedback(COCASstate([1,1,1],state,'∅'), COCASaction(action,l), 1.0)
+                            if σ == '⊕'
                                 λ[o][sh][s][a][l]['⊕'] = 1.
-                                λ[o][sh][s][a][l]['∅'] = 1.
                                 λ[o][sh][s][a][l]['⊖'] = 0.
+                            elseif σ == '⊖'
+                                λ[o][sh][s][a][l]['⊕'] = 0.
+                                λ[o][sh][s][a][l]['⊖'] = 1.
+                            elseif σ == '∅'
+                                λ[o][sh][s][a][l]['∅'] = 1.
                                 λ[o][sh][s][a][l]['⊘'] = 0.
                             else
-                                λ[o][sh][s][a][l]['⊕'] = 0.
                                 λ[o][sh][s][a][l]['∅'] = 0.
-                                λ[o][sh][s][a][l]['⊖'] = 1.
                                 λ[o][sh][s][a][l]['⊘'] = 1.
                             end
                         else
                             if sh == 1
-                                if competence(state, A[a]) == 2
-                                    p_approval = .8
-                                    p_disapproval = .2
+                                σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
+                                if σ == '⊕'
+                                    λ[o][sh][s][a][l]['⊕'] = 8.
+                                    λ[o][sh][s][a][l]['⊖'] = 2.
+                                elseif σ == '⊖'
+                                    λ[o][sh][s][a][l]['⊕'] = 2.
+                                    λ[o][sh][s][a][l]['⊖'] = 8.
+                                elseif σ == '∅'
+                                    λ[o][sh][s][a][l]['∅'] = 8.
+                                    λ[o][sh][s][a][l]['⊘'] = 2.
                                 else
-                                    p_disapproval = .88
-                                    p_approval = .2
+                                    λ[o][sh][s][a][l]['∅'] = 0.
+                                    λ[o][sh][s][a][l]['⊘'] = 1.
                                 end
-                                λ[o][sh][s][a][l]['⊕'] = p_approval
-                                λ[o][sh][s][a][l]['∅'] = p_approval
-                                λ[o][sh][s][a][l]['⊖'] = p_disapproval
-                                λ[o][sh][s][a][l]['⊘'] = p_disapproval
                             else
-                                if competence(state, A[a]) == 2
-                                    p_approval = .7
-                                    p_disapproval = .3
+                                σ = generate_feedback(COCASstate([2,2,2],state,'∅'), COCASaction(action,l), 1.0)
+                                if σ == '⊕'
+                                    λ[o][sh][s][a][l]['⊕'] = 7.
+                                    λ[o][sh][s][a][l]['⊖'] = 3.
+                                elseif σ == '⊖'
+                                    λ[o][sh][s][a][l]['⊕'] = 3.
+                                    λ[o][sh][s][a][l]['⊖'] = 7.
+                                elseif σ == '∅'
+                                    λ[o][sh][s][a][l]['∅'] = 7.
+                                    λ[o][sh][s][a][l]['⊘'] = 3.
                                 else
-                                    p_disapproval = .7
-                                    p_approval = .3
+                                    λ[o][sh][s][a][l]['∅'] = 0.
+                                    λ[o][sh][s][a][l]['⊘'] = 1.
                                 end
-                                λ[o][sh][s][a][l]['⊕'] = p_approval
-                                λ[o][sh][s][a][l]['∅'] = p_approval
-                                λ[o][sh][s][a][l]['⊖'] = p_disapproval
-                                λ[o][sh][s][a][l]['⊘'] = p_disapproval
                             end
                         end
                     end
@@ -836,7 +846,7 @@ function generate_feedback(state::COCASstate,
     # Request for ToC logic
     if action.l == 0
         # Operator noise
-        if rand() < 1 - get_consistency(sh)
+        if rand() < 1 - ϵ
             return ['⊘', '∅'][rand(1:2)]
         end
 
@@ -868,58 +878,58 @@ function generate_feedback(state::COCASstate,
         end
     end
 
-    # if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
-    #   return (action.l == 1) ? '⊕' : '∅'
-    # end
-    #
-    # if rand() < 1 - get_consistency(state.sh)
-    #     return ['⊕', '⊖'][rand(1:2)]
-    # end
-    #
-    # if state.sh[3] == 2
-    #     if state.sh[2] == 1
-    #         if (state.state.w.time == "night" && state.state.w.weather == "snowy")
-    #             return (action.l == 1) ? '⊖' : '⊘'
-    #         end
-    #     else
-    #         if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
-    #             state.state.w.weather == "snowy")
-    #             return (action.l == 1) ? '⊖' : '⊘'
-    #         end
-    #     end
-    # end
-    #
-    # if typeof(state.state) == EdgeState
-    #     if state.state.o && state.state.l == 1
-    #         return (action.l == 1) ? '⊖' : '⊘'
-    #     else
-    #         return (action.l == 1) ? '⊕' : '∅'
-    #     end
-    # else
-    #     if action.action.value == '⤉'
-    #         return (action.l == 1) ? '⊕' : '∅'
-    #     elseif action.action.value == '→'
-    #         if state.state.o && state.state.p && state.state.v > 1
-    #             return (action.l == 1) ? '⊖' : '⊘'
-    #         else
-    #             return (action.l == 1) ? '⊕' : '∅'
-    #         end
-    #     else
-    #         if state.state.o
-    #             if state.state.p || state.state.v > 1
-    #                 return (action.l == 1) ? '⊖' : '⊘'
-    #             else
-    #                 return (action.l == 1) ? '⊕' : '∅'
-    #             end
-    #         else
-    #             if state.state.p && state.state.v > 2
-    #                 return (action.l == 1) ? '⊖' : '⊘'
-    #             else
-    #                 return (action.l == 1) ? '⊕' : '∅'
-    #             end
-    #         end
-    #     end
-    # end
+    if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
+      return (action.l == 1) ? '⊕' : '∅'
+    end
+
+    if rand() < 1 - get_consistency(state.sh)
+        return ['⊕', '⊖'][rand(1:2)]
+    end
+
+    if state.sh[3] == 2
+        if state.sh[2] == 1
+            if (state.state.w.time == "night" && state.state.w.weather == "snowy")
+                return (action.l == 1) ? '⊖' : '⊘'
+            end
+        else
+            if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
+                state.state.w.weather == "snowy")
+                return (action.l == 1) ? '⊖' : '⊘'
+            end
+        end
+    end
+
+    if typeof(state.state) == EdgeState
+        if state.state.o && state.state.l == 1
+            return (action.l == 1) ? '⊖' : '⊘'
+        else
+            return (action.l == 1) ? '⊕' : '∅'
+        end
+    else
+        if action.action.value == '⤉'
+            return (action.l == 1) ? '⊕' : '∅'
+        elseif action.action.value == '→'
+            if state.state.o && state.state.p && state.state.v > 1
+                return (action.l == 1) ? '⊖' : '⊘'
+            else
+                return (action.l == 1) ? '⊕' : '∅'
+            end
+        else
+            if state.state.o
+                if state.state.p || state.state.v > 1
+                    return (action.l == 1) ? '⊖' : '⊘'
+                else
+                    return (action.l == 1) ? '⊕' : '∅'
+                end
+            else
+                if state.state.p && state.state.v > 2
+                    return (action.l == 1) ? '⊖' : '⊘'
+                else
+                    return (action.l == 1) ? '⊕' : '∅'
+                end
+            end
+        end
+    end
 end
 
 function generate_successor(M::DomainSSP,
@@ -1010,7 +1020,7 @@ function build_cocas(𝒟::DomainSSP,
     C = COCASSP(𝒮, S, A, T, costs, s₀, G)
     generate_costs!(C)
     generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
-    check_transition_validity(C)
+    # check_transition_validity(C)
     return C
 end
 
