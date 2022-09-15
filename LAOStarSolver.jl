@@ -122,7 +122,7 @@ function solve(ℒ::LAOStarSolver,
     error = ℒ.dead_end_cost
 
     visited = Set{Integer}()
-    while iter < ℒ.max_iter
+    while true
         while true
             empty!(visited)
             num_expanded = expand(ℒ, M, s, visited)
@@ -135,13 +135,14 @@ function solve(ℒ::LAOStarSolver,
         while true
             empty!(visited)
             error = test_convergence(ℒ, M, s, visited)
-            # println(error)
+            println(M.S[s], ":  ", error)
             if error > ℒ.dead_end_cost
                 break
             end
             if error < ℒ.ϵ
                 if !haskey(ℒ.π, s)
-                    println(M.S[s])
+                    # println(M.S[s])
+                    bellman_update(ℒ, M, s)
                 end
                 # println("$s:  Total nodes expanded: $total_expanded")
                 ℒ.solved[s] = true
@@ -149,8 +150,13 @@ function solve(ℒ::LAOStarSolver,
             end
         end
         iter += 1
+        println(iter)
+        if iter < ℒ.max_iter
+            bellman_update(ℒ, M, s)
+            return ℒ.π[s], total_expanded
+        end
     end
-    println("Total nodes expanded: $total_expanded")
+    # println("Total nodes expanded: $total_expanded")
     ℒ.solved[s] = true
     return ℒ.π[s], total_expanded
 end

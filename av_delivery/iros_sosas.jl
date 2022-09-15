@@ -1,63 +1,61 @@
 include("utils.jl")
 include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
+include("../LRTDPsolverSOSAS.jl")
+include("../ValueIterationSolver.jl")
+
 include("human_operator.jl")
 include("av_only.jl")
 include("so_sas.jl")
 
 
-function simulate_sosas(SOSAS, num_runs)
-    @time L = solve_model(SOSAS)
+function simulate_sosas(M::SOSAS, num_runs)
+    @time L = solve_model(M)
 
-    S, A, C = H.S, H.A, H.C
-    T_base = deepcopy(H.T)
+    S, A, C = M.S, M.A, M.C
 
     costs = Vector{Float64}()
     for i=1:num_runs
-        state = H.s₀
+        state = M.s₀
         episode_cost = 0.0
 
-        while true
-            s = H.SIndex[state]
-            a = solve(L, H, s)[1]
+        while !terminal(M, state) && episode_cost < 1000.0
+            s = M.SIndex[state]
+            # a = solve(L, M, s)[1]
+            a = rand(1:2)
             action = A[a]
-            # println("taking action $action in state $state.")
-            episode_cost += C[s][a]
-            state′ = generate_successor(H, state, action)
+            # println("Operator $action taking action $action in state $state.")
+            # println(episode_cost)
+            episode_cost += generate_costs(M, M.L1, M.L2, s, a)
+            state′ = generate_successor(M, state, action)
             # if state′.σ == '⊘'
             #     block_transition!(H, state, action)
             #     delete!(L.solved, s)
             # end
             state = state′
-
-            if terminal(H, state)
-                break
-            end
         end
 
         push!(costs, episode_cost)
-        H.T = T_base
     end
 
     return mean(costs), std(costs)
 end
 
 function run_sosas()
-    D = build_model()
-    L1 = solve_model(D)
-    H = build_cas(D, [0], ['⊘', '∅'])
+    AV = build_av()
+    L1 = solve_model(AV)
+    K = build_model()
+    H = build_cas(K, [0], ['⊘', '⊕', '∅'])
     L2 = solve_model(H)
-    SOSAS = build_sosas(D, L1, H, L2)
+    M = build_sosas(AV, L1, H, L2)
 
-    w = WorldState(2, "day", "night")
+    w = WorldState(2, "day", "sunny")
     tasks = [v for (k,v) in fixed_routes]
     episode = 1
     for (init, goal) in tasks
-        set_route(D, H, init, goal, w)
-        generate_transitions!(H.𝒮.D, H.𝒮.A, H.𝒮.F, H, H.S, H.A, H.G)
-
+        set_route(M, init, goal, w)
         println(episode, "   |   Task: $init --> $goal")
-        results = simulate_sosas(H, 1000)
+        results = simulate_sosas(M, 100)
         println(results)
         episode += 1
     end

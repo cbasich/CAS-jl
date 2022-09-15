@@ -2,7 +2,7 @@ struct SOSASAction
     operator::Int
 end
 
-struct SOSAS
+mutable struct SOSAS
     AV
     L1
     H
@@ -37,11 +37,11 @@ function generate_states(AV::AVSSP, H::CASSP)
     states = Vector{CASstate}()
     G = Set{CASstate}()
     for sh in H.𝒮.F.SH
-        for state in D.S
+        for state in AV.S
             for σ in ['⊕', '⊘', '∅']
                 new_state = CASstate(sh, state, σ)
                 push!(states, new_state)
-                if state in D.G && σ == '∅'
+                if state in AV.G
                     push!(G, new_state)
                 end
             end
@@ -50,23 +50,40 @@ function generate_states(AV::AVSSP, H::CASSP)
     o1, o2 = rand(1:2), rand(1:2)
     oa = (o1 == 1) ? 1 : 2
     sh = [o1, o2, oa]
-    return states, CASstate(sh, D.s₀, '∅'), G
+    return states, CASstate(sh, AV.s₀, '∅'), G
+end
+
+function generate_goals(AV::AVSSP, H::CASSP)
+    G = Set{CASstate}()
+    for sh in H.𝒮.F.SH
+        for state in AV.G
+            for σ in ['⊕', '⊘', '∅']
+                new_state = CASstate(sh, state, σ)
+                push!(G, new_state)
+            end
+        end
+    end
+    return G
 end
 
 function terminal(sosas::SOSAS, state::CASstate)
-    return state in sosas.G
+    return state.state in sosas.AV.G
 end
 
 function set_route(M::SOSAS, init, goal, w)
     AV, H = M.AV, M.H
-    set_route(AV, H, init, goal, w)
+    set_route(H.𝒮.D, H, init, goal, w)
     generate_transitions!(H.𝒮.D, H.𝒮.A, H.𝒮.F, H, H.S, H.A, H.G)
-    L1 = solve_model(AV)
-    L2 = solve_model(H)
+    M.L2 = solve_model(H)
+    set_init!(AV, init, w)
+    set_goals!(AV, [goal], w)
+    generate_transitions!(AV, AV.graph)
+    generate_costs!(AV)
+    M.L1 = solve_model(AV)
     M.s₀ = H.s₀
-    M.G = H.G
-    generate_costs!(M, L1, L2)
-    generate_transitions!(M, M.S, M.A, AV, L1, H, L2)
+    M.G = generate_goals(AV, H)
+    # generate_costs!(M, L1, L2)
+    # generate_transitions!(M, M.S, M.A, AV, L1, H, L2)
 end
 
 
@@ -153,7 +170,7 @@ function generate_transitions!(SOSAS, S, A, AV, L1, H, L2)
                 t = AV.T[av_s][av_a]
                 for i=1:length(t)
                     for j=1:length(th)
-                        push!(T[s][a], (M.SIndex[SOSASstate(th[j][1], t[i][1], '⊕')],
+                        push!(T[s][a], (M.SIndex[CASstate(th[j][1], t[i][1], '⊕')],
                                                            (t[i][2] * th[j][2])))
                     end
                 end
@@ -166,26 +183,38 @@ function generate_transitions!(SOSAS, S, A, AV, L1, H, L2)
     end
 end
 
-function get_transition(SOSAS, s, a)
-    AV, L1, H, L2, S, A = SOSAS.AV, SOSAS.L1, SOSAS.H, SOSAS.L2, SOSAS.S, SOSAS.A
-    T = []
+function get_transition(M::SOSAS, s, a)
+    AV, L1, H, L2, S, A = M.AV, M.L1, M.H, M.L2, M.S, M.A
+    T = Vector{Tuple{Int, Float64}}()
     state = S[s]
+
+    if terminal(M, state)
+        return [(s, 1.0)]
+    end
 
     th = human_state_transition(state.sh, state.state, A[a].operator)
 
-    if A[a].actor == 1 #AV
+    if A[a].operator == 1 #AV
         av_s = AV.SIndex[state.state]
-        av_a = L1.π[av_s]
+        if !L1.solved[av_s]
+            av_a = solve(L1, M.AV, av_s)[1]
+        else
+            av_a = L1.π[av_s]
+        end
         t = AV.T[av_s][av_a]
         for i=1:length(t)
             for j=1:length(th)
-                push!(T, (M.SIndex[SOSASstate(th[j][1], t[i][1], '⊕')],
-                                                   (t[i][2] * th[j][2])))
+                push!(T, (M.SIndex[CASstate(th[j][1], AV.S[t[i][1]], '⊕')],
+                                                      (t[i][2] * th[j][2])))
             end
         end
     else #Human
-        human_s = H.SIndex[CASstate(state.sh, state.state, '∅')]
-        human_a = L2.π[human_s]
+        human_s = H.SIndex[CASstate(state.sh, state.state, '⊘')]
+        if human_s ∉ L2.solved
+            human_a = solve(L2, H, human_s)[1]
+        else
+            human_a = L2.π[human_s]
+        end
         T = H.T[human_s][human_a]
     end
 
@@ -195,6 +224,9 @@ end
 function generate_costs(M::SOSAS, L1, L2, s, a)
     S, A, C = M.S, M.A, M.C
     state, action = S[s], A[a]
+    if terminal(M, state)
+        return 0.
+    end
     if action.operator == 1
         av_s = M.AV.SIndex[state.state]
         if !L1.solved[av_s]
@@ -202,7 +234,7 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
         else
             av_a = L1.π[av_s]
         end
-        return M.AV.C[av_s][av_a] + autonomy_cost(state)
+        return M.AV.C[av_s][av_a] #+ autonomy_cost(state)
     else
         human_s = M.H.SIndex[CASstate(state.sh, state.state, '⊘')]
         if human_s ∉ L2.solved
@@ -210,6 +242,8 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
         else
             human_a = L2.π[human_s]
         end
+        #No cost model
+        return M.H.C[human_s][human_a] - autonomy_cost(state) - human_cost(state.sh, state, H.A[human_a])
         if state.σ == '⊕'
             return M.H.C[human_s][human_a] - autonomy_cost(state)
         else
@@ -240,15 +274,15 @@ end
 
 function generate_successor(M::SOSAS,
                         state::CASstate,
-                       action::CASaction)
+                       action::SOSASAction)
     s, a = M.SIndex[state], M.AIndex[action]
     thresh = rand()
     p = 0.
-    T = H.T[s][a]
+    T = get_transition(M, s, a)
     for (s′, prob) ∈ T
         p += prob
         if p >= thresh
-            return H.S[s′]
+            return M.S[s′]
         end
     end
 end
@@ -265,10 +299,11 @@ function build_sosas(AV, L1, H, L2)
     return M
 end
 
-function solve_model(sosas::SOSAS)
-    ℒ = LRTDPsolver(sosas, 1000., 10000, .01, Dict{Int, Int}(),
-                    false, Set{Int}(), zeros(length(sosas.AV.S)),
-                    zeros(length(sosas.S)), zeros(length(sosas.A)))
-    solve(ℒ, sosas, sosas.SIndex[sosas.s₀])
+function solve_model(M::SOSAS)
+    ℒ = LRTDPsolverSOSAS(M, 1000., 10000, .01, Dict{Int, Int}(),
+                    false, Set{Int}(), zeros(length(M.AV.S)),
+                    zeros(length(M.S)), zeros(length(M.A)))
+    println("Solving SOSAS")
+    solve(ℒ, M, M.SIndex[M.s₀])
     return ℒ
 end

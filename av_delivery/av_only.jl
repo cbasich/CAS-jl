@@ -653,13 +653,13 @@ function solve_model(M::AVSSP)
     #                                     zeros(length(M.A)))
     # solve(ℒ, M, M.SIndex[M.s₀])
     # return ℒ
-    ℒ = LAOStarSolver(10000, 1000., 1.0, .001, Dict{Integer, Integer}(),
+    ℒ = LAOStarSolver(100, 1000., 1.0, .001, Dict{Integer, Integer}(),
                         zeros(length(M.S)), zeros(length(M.S)),
                         zeros(length(M.S)), zeros(length(M.A)),
                         [false for i=1:length(M.S)])
     a, total_expanded = solve(ℒ, M, M.SIndex[M.s₀])
-    println("LAO* expanded $total_expanded nodes.")
-    println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
+    # println("LAO* expanded $total_expanded nodes.")
+    # println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
     return ℒ
 end
 function allowed(D::AVSSP, s::Int, a::Int)
