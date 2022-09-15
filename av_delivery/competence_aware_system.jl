@@ -11,7 +11,6 @@ end
 rand(s::Set) = rand(Base.GLOBAL_RNG, s)
 
 using Plots
-# using GLM
 using DecisionTree
 using DataFrames
 using CSV
@@ -58,21 +57,22 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            if typeof(state) == EdgeState && action.value == '↑'
-                if state.r == "None"
-                    κ[s][a] = 2
-                else
-                    κ[s][a] = 0
-                end
-            else
-                if typeof(state) == NodeState && action.value == '⤉'
-                    κ[s][a] = 2
-                elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
-                    κ[s][a] = 2
-                else
-                    κ[s][a] = 1
-                end
-            end
+            κ[s][a] = competence(state, action)
+            # if typeof(state) == EdgeState && action.value == '↑'
+            #     if state.r == "None"
+            #         κ[s][a] = 2
+            #     else
+            #         κ[s][a] = 0
+            #     end
+            # else
+            #     if typeof(state) == NodeState && action.value == '⤉'
+            #         κ[s][a] = 2
+            #     elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
+            #         κ[s][a] = 2
+            #     else
+            #         κ[s][a] = 1
+            #     end
+            # end
         end
     end
     return κ
@@ -136,8 +136,18 @@ end
 function competence(state::DomainState,
                    action::DomainAction)
     if typeof(state) == EdgeState
-        if state.o && state.l == 1
-            return 0
+        if action.value == '↑'
+            if state.r == "None"
+                return 2
+            else
+                return 0
+            end
+        elseif action.value == '⤉'
+            if state.o && state.l == 1
+                return 0
+            else
+                return 2
+            end
         else
             return 2
         end
@@ -145,13 +155,13 @@ function competence(state::DomainState,
         if action.value == '⤉'
             return 2
         elseif action.value == '→'
-            if state.o && state.p && state.v > 1
+            if (state.o || state.w.weather == "snowy" || (state.w.time == "night" && state.w.weather == "rainy")) && state.p && state.v > 1
                 return 0
             else
                 return 2
             end
         else
-            if state.o
+            if state.o || state.w.weather == "snowy" || (state.w.time == "night" && state.w.weather == "rainy")
                 if state.p || state.v > 1
                     return 0
                 else
@@ -255,12 +265,12 @@ end
 function get_consistency(sh)
     o1, o2, oa = sh[1],sh[2],sh[3]
     if oa == 1
-        return 0.95
+        return 1.0
     else
         if o2 == 1
-            return 0.7
-        else
             return 0.8
+        else
+            return 0.7
         end
     end
 end
@@ -286,6 +296,25 @@ function generate_feedback_profile(𝒟::DomainSSP,
                                                     for l=0:1)
                                                     for a=1:length(A))
                                                     for s=1:length(S))
+
+    Threads.@threads for s=1:length(S)
+        state = S[s]
+        for a=1:length(A)
+            for l=0:1
+                if competence(state, A[a]) == 2
+                    p_approval = .8333
+                    p_disapproval = 1. - p_approval
+                else
+                    p_disapproval = .8333
+                    p_approval = 1. - p_disapproval
+                end
+                λ[s][a][l]['⊕'] = p_approval
+                λ[s][a][l]['∅'] = p_approval
+                λ[s][a][l]['⊖'] = p_disapproval
+                λ[s][a][l]['⊘'] = p_disapproval
+            end
+        end
+    end
     # for (a, action) in enumerate(A)
     #     X_n, Y_n = split_data(D["node"][string(action.value)])
     #     M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
@@ -660,6 +689,11 @@ function generate_feedback(state::CASstate,
                                ϵ::Float64)
     # Request for ToC logic
     if action.l == 0
+        # Operator noise
+        if rand() < 1 - get_consistency(sh)
+            return ['⊘', '∅'][rand(1:2)]
+        end
+
         if sh[3] == 1 # Local operator always accepts
             return '∅'
         else
@@ -688,58 +722,58 @@ function generate_feedback(state::CASstate,
         end
     end
 
-    if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
-      return (action.l == 1) ? '⊕' : '∅'
-    end
-
-    if rand() < 1 - get_consistency(sh)
-        return ['⊕', '⊖'][rand(1:2)]
-    end
-
-    if sh[3] == 2
-        if sh[2] == 1
-            if (state.state.w.time == "night" && state.state.w.weather == "snowy")
-                return (action.l == 1) ? '⊖' : '⊘'
-            end
-        else
-            if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
-                state.state.w.weather == "snowy")
-                return (action.l == 1) ? '⊖' : '⊘'
-            end
-        end
-    end
-
-    if typeof(state.state) == EdgeState
-        if state.state.o && state.state.l == 1
-            return (action.l == 1) ? '⊖' : '⊘'
-        else
-            return (action.l == 1) ? '⊕' : '∅'
-        end
-    else
-        if action.action.value == '⤉'
-            return (action.l == 1) ? '⊕' : '∅'
-        elseif action.action.value == '→'
-            if state.state.o && state.state.p && state.state.v > 1
-                return (action.l == 1) ? '⊖' : '⊘'
-            else
-                return (action.l == 1) ? '⊕' : '∅'
-            end
-        else
-            if state.state.o
-                if state.state.p || state.state.v > 1
-                    return (action.l == 1) ? '⊖' : '⊘'
-                else
-                    return (action.l == 1) ? '⊕' : '∅'
-                end
-            else
-                if state.state.p && state.state.v > 2
-                    return (action.l == 1) ? '⊖' : '⊘'
-                else
-                    return (action.l == 1) ? '⊕' : '∅'
-                end
-            end
-        end
-    end
+    # if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
+    #   return (action.l == 1) ? '⊕' : '∅'
+    # end
+    #
+    # if rand() < 1 - get_consistency(sh)
+    #     return ['⊕', '⊖'][rand(1:2)]
+    # end
+    #
+    # if sh[3] == 2
+    #     if sh[2] == 1
+    #         if (state.state.w.time == "night" && state.state.w.weather == "snowy")
+    #             return (action.l == 1) ? '⊖' : '⊘'
+    #         end
+    #     else
+    #         if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
+    #             state.state.w.weather == "snowy")
+    #             return (action.l == 1) ? '⊖' : '⊘'
+    #         end
+    #     end
+    # end
+    #
+    # if typeof(state.state) == EdgeState
+    #     if state.state.o && state.state.l == 1
+    #         return (action.l == 1) ? '⊖' : '⊘'
+    #     else
+    #         return (action.l == 1) ? '⊕' : '∅'
+    #     end
+    # else
+    #     if action.action.value == '⤉'
+    #         return (action.l == 1) ? '⊕' : '∅'
+    #     elseif action.action.value == '→'
+    #         if (state.o || state.w.weather == "snowy" || (state.w.time == "night" && state.w.weather == "rainy")) && state.p && state.v > 1
+    #             return (action.l == 1) ? '⊖' : '⊘'
+    #         else
+    #             return (action.l == 1) ? '⊕' : '∅'
+    #         end
+    #     else
+    #         if state.o || state.w.weather == "snowy" || (state.w.time == "night" && state.w.weather == "rainy")
+    #             if state.state.p || state.state.v > 1
+    #                 return (action.l == 1) ? '⊖' : '⊘'
+    #             else
+    #                 return (action.l == 1) ? '⊕' : '∅'
+    #             end
+    #         else
+    #             if state.state.p && state.state.v > 2
+    #                 return (action.l == 1) ? '⊖' : '⊘'
+    #             else
+    #                 return (action.l == 1) ? '⊕' : '∅'
+    #             end
+    #         end
+    #     end
+    # end
 end
 
 function generate_successor(M::DomainSSP,
@@ -812,23 +846,11 @@ end
 function build_cas(𝒟::DomainSSP,
                    L::Vector{Int},
                    Σ::Vector{Char})
-    if ispath(joinpath(abspath(@__DIR__), "params.jld"))
-        κ = load_autonomy_profile()
-    else
-        κ = generate_autonomy_profile(𝒟)
-    end
+
+    κ = generate_autonomy_profile(𝒟)
     𝒜 = AutonomyModel(L, κ, autonomy_cost)
 
     D = Dict{String, Dict{String, DataFrame}}()
-
-    D["node"] = Dict{String, DataFrame}()
-    for a in ["↑", "→", "↓", "←", "⤉"]
-        D["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "node_$a.csv")))
-    end
-    D["edge"] = Dict{String, DataFrame}()
-    for a in ["↑", "⤉"]
-        D["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "edge_$a.csv")))
-    end
     λ = generate_feedback_profile(𝒟, Σ, L, D)
 
     SH = Set([i for i in x] for x in vec(collect(Base.product(1:2, 1:2, 1:2))))
