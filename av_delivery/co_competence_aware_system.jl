@@ -769,7 +769,7 @@ end
 function check_transition_validity(C)
     S, A, T = C.S, C.A, C.T
     for (s, state) in enumerate(S)
-        if state.state.w != C.s₀.state.w
+        if state.state.w != C.s₀.state.w || state.sh == [1, 1, 2]
             continue
         end
         for (a, action) in enumerate(A)
