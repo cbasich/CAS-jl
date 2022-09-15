@@ -626,7 +626,7 @@ function generate_actions(D, A)
 end
 
 function allowed(C, s::Int, a::Int)
-    return C.A[a].l <= C.𝒮.A.κ[M.SIndex[C.S[s].state]][Int(ceil(a/3))]
+    return C.A[a].l <= C.𝒮.A.κ[C.𝒮.D.SIndex[C.S[s].state]][Int(ceil(a/3))]
 end
 
 function generate_transitions!(𝒟, 𝒜, ℱ, C,
@@ -639,6 +639,9 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
     for s = 1:length(S)#(s, state) in enumerate(S)
         state = S[s]
         if state.state.w.time != C.s₀.state.w.time || state.state.w.weather != C.s₀.state.w.weather
+            continue
+        end
+        if state.sh == [1, 1, 2]
             continue
         end
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
@@ -664,17 +667,17 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             t = 𝒟.T[base_s][base_a]
             if (t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a])
                 T[s][a] = Vector{Tuple{Int, Float64}}()
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
                 for i=1:length(th)
-                    if typeof(state.state) == NodeState
-                        state′ = NodeState(state.state.id, state.state.p,
-                            state.state.o, state.state.v, state.state.θ, w)
-                    else
-                        state′ = EdgeState(state.state.u, state.state.v,
-                            state.state.θ, state.state.o, state.state.l,
-                            state.state.r, w)
-                    end
                     push!(T[s][a], (C.SIndex[COCASstate(th[i][1],
-                                    state′, state.σ)], th[i][2]))
+                                    dstate′, state.σ)], th[i][2]))
                 end
                 continue
             end
@@ -726,24 +729,24 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                             push!(T[s][a], (C.SIndex[COCASstate(th[i][1],
                               𝒟.S[t[j][1]], '∅')], th[i][2] * t[j][2] * p_approval))
                         end
-                        state′ = NodeState(state.state.id, state.state.p,
+                        dstate′ = NodeState(state.state.id, state.state.p,
                             state.state.o, state.state.v, state.state.θ, w)
-                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1], state′, '⊘')],
+                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′, '⊘')],
                                         th[i][2] * p_disapproval))
                     end
                 end
             elseif action.l == 1
                 p_approve = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][1]['⊕']
-                p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
+                p_disapprove = 1.0 - p_approve
                 if typeof(state.state) == NodeState
-                    state′ = NodeState(state.state.id, state.state.p,
+                    dstate′ = NodeState(state.state.id, state.state.p,
                         state.state.o, state.state.v, state.state.θ, w)
                 else
-                    state′ = EdgeState(state.state.u, state.state.v,
+                    dstate′ = EdgeState(state.state.u, state.state.v,
                         state.state.θ, state.state.o, state.state.l, state.state.r, w)
                 end
                 for i=1:length(th)
-                    push!(T[s][a], (C.SIndex[COCASstate(th[i][1], state′, '⊖')],
+                    push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′, '⊖')],
                                     th[i][2] * p_disapprove))
                     for j=1:length(t)
                         push!(T[s][a], (C.SIndex[COCASstate(th[i][1], 𝒟.S[t[j][1]], '⊕')],
@@ -787,7 +790,8 @@ function check_transition_validity(C)
                 println("Total probability mass of $mass.")
                 println("Transition vector is the following: $(T[s][a])")
                 println("Succ state vector: $([S[s] for (s,p) in T[s][a]])")
-                @assert false
+                # @assert false
+                break
             end
         end
     end
