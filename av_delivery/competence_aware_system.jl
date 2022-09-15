@@ -597,11 +597,24 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_action = action.action
             base_s = 𝒟.SIndex[base_state]
             base_a = 𝒟.AIndex[base_action]
-
+            w = state.state.w
+            if w.active_avs == 3
+                w = WorldState(0, w.time, w.weather)
+            else
+                w = WorldState(w.active_avs+1, w.time, w.weather)
+            end
             t = 𝒟.T[base_s][base_a]
             if (t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a])
                 T[s][a] = Vector{Tuple{Int, Float64}}()
-                push!(T[s][a], (s, 1.0))
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
+                push!(T[s][a], (C.SIndex[CASstate(dstate′, state.σ)], 1.0))
                 continue
             end
 
@@ -612,11 +625,15 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
                 if typeof(state.state) == EdgeState
                     if state.state.o && action.action.value == '⤉'
-                        state′ = CASstate(EdgeState(state.state.u,
+                        dstate′ = EdgeState(state.state.u,
                                 state.state.v, state.state.θ, false,
-                                state.state.l, state.state.r, state.state.w), '∅')
+                                state.state.l, state.state.r, w)
+                        state′ = CASstate(dstate′, '∅')
                         push!(T[s][a], (C.SIndex[state′], p_approval))
-                        push!(T[s][a], (C.SIndex[CASstate(state.state, '⊘')], p_disapproval))
+                        dstate′′ = EdgeState(state.state.u,
+                                state.state.v, state.state.θ, true,
+                                state.state.l, state.state.r, state.state.w)
+                        push!(T[s][a], (C.SIndex[CASstate(dstate′′, '⊘')], p_disapproval))
                     elseif !state.state.o && action.action.value == '↑'
                         temp = []
                         mass = 0.0
@@ -630,9 +647,15 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                             state′ = CASstate(𝒟.S[temp[j][1]], '∅')
                             push!(T[s][a], (C.SIndex[state′], (temp[j][2]/mass)*p_approval))
                         end
-                        push!(T[s][a], (C.SIndex[CASstate(state.state, '⊘')], p_disapproval))
+                        dstate′ = EdgeState(state.state.u, state.state.v,
+                                state.state.θ, state.state.o, state.state.l,
+                                state.state.r, w)
+                        push!(T[s][a], (C.SIndex[CASstate(dstate′, '⊘')], p_disapproval))
                     else
-                        T[s][a] = [(s, 1.0)]
+                        dstate′ = EdgeState(state.state.u, state.state.v,
+                                state.state.θ, state.state.o, state.state.l,
+                                state.state.r, w)
+                        T[s][a] = [(C.SIndex[CASstate(dstate′, state.σ)], 1.0)]
                         continue
                     end
                 else
@@ -640,12 +663,22 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                         push!(T[s][a], (C.SIndex[CASstate(𝒟.S[t[j][1]], '∅')],
                                         t[j][2] * p_approval))
                     end
-                    push!(T[s][a], (C.SIndex[CASstate(state.state, '⊘')], p_disapproval))
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                    push!(T[s][a], (C.SIndex[CASstate(dstate′, '⊘')], p_disapproval))
                 end
             elseif action.l == 1
                 p_approve = λ[base_s][base_a][1]['⊕']
                 p_disapprove = 1.0 - p_approve #λ[base_s][base_a][1]['⊖']
-                push!(T[s][a], (C.SIndex[CASstate(state.state, '⊖')],
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
+                push!(T[s][a], (C.SIndex[CASstate(dstate′, '⊖')],
                                 p_disapprove))
                 for j=1:length(t)
                     push!(T[s][a], (C.SIndex[CASstate(𝒟.S[t[j][1]], '⊕')],
