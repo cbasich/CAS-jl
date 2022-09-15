@@ -369,14 +369,14 @@ function generate_feedback_profile(𝒟::DomainSSP,
                             if sh == 1
                                 σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
                                 if σ == '⊕'
-                                    λ[o][sh][s][a][l]['⊕'] = 8.
-                                    λ[o][sh][s][a][l]['⊖'] = 2.
+                                    λ[o][sh][s][a][l]['⊕'] = .8
+                                    λ[o][sh][s][a][l]['⊖'] = .2
                                 elseif σ == '⊖'
-                                    λ[o][sh][s][a][l]['⊕'] = 2.
-                                    λ[o][sh][s][a][l]['⊖'] = 8.
+                                    λ[o][sh][s][a][l]['⊕'] = .2
+                                    λ[o][sh][s][a][l]['⊖'] = .8
                                 elseif σ == '∅'
-                                    λ[o][sh][s][a][l]['∅'] = 8.
-                                    λ[o][sh][s][a][l]['⊘'] = 2.
+                                    λ[o][sh][s][a][l]['∅'] = .8
+                                    λ[o][sh][s][a][l]['⊘'] = .2
                                 else
                                     λ[o][sh][s][a][l]['∅'] = 0.
                                     λ[o][sh][s][a][l]['⊘'] = 1.
@@ -384,14 +384,14 @@ function generate_feedback_profile(𝒟::DomainSSP,
                             else
                                 σ = generate_feedback(COCASstate([2,2,2],state,'∅'), COCASaction(action,l), 1.0)
                                 if σ == '⊕'
-                                    λ[o][sh][s][a][l]['⊕'] = 7.
-                                    λ[o][sh][s][a][l]['⊖'] = 3.
+                                    λ[o][sh][s][a][l]['⊕'] = .7
+                                    λ[o][sh][s][a][l]['⊖'] = .3
                                 elseif σ == '⊖'
-                                    λ[o][sh][s][a][l]['⊕'] = 3.
-                                    λ[o][sh][s][a][l]['⊖'] = 7.
+                                    λ[o][sh][s][a][l]['⊕'] = .3
+                                    λ[o][sh][s][a][l]['⊖'] = .7
                                 elseif σ == '∅'
-                                    λ[o][sh][s][a][l]['∅'] = 7.
-                                    λ[o][sh][s][a][l]['⊘'] = 3.
+                                    λ[o][sh][s][a][l]['∅'] = .7
+                                    λ[o][sh][s][a][l]['⊘'] = .3
                                 else
                                     λ[o][sh][s][a][l]['∅'] = 0.
                                     λ[o][sh][s][a][l]['⊘'] = 1.
