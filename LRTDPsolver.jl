@@ -14,7 +14,12 @@ mutable struct LRTDPsolver
 end
 
 function lookahead(solver, s, a)
-    q, V, H, M, T = 0., solver.V, solver.H, solver.M, solver.M.T[s][a]
+    q, V, H, M = 0., solver.V, solver.H, solver.M
+    if typeof(solver.M) == SOSAS
+        T = get_transition(M, s, a)
+    else
+        T = solver.M.T[s][a]
+    end
     for i = 1:length(T)
     # for (sp, p) in T
         if haskey(solver.π, T[i][1])
@@ -26,6 +31,9 @@ function lookahead(solver, s, a)
         end
     end
     # return q + solver.M.C(solver.M, s, a)
+    if typeof(solver.M) == SOSAS
+        return q + generate_costs(solver.M, solver.M.L1, solver.M.L2, s, a)
+    end
     return q + solver.M.C[s][a]
 end
 
@@ -71,6 +79,8 @@ function generate_successor(T)
             return T[i][1]
         end
     end
+    println(T)
+    println("No successor found")
 end
 
 function trial(solver, s)

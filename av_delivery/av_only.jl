@@ -56,7 +56,7 @@ end
 
 function generate_random_world_state()
     return WorldState(
-        sample(1:4),
+        sample(0:3),
         sample(["day", "night"]),
         sample(["sunny", "rainy", "snowy"], aweights([0.85, 0.1, 0.05]))
     )
@@ -87,7 +87,7 @@ function EdgeState()
     return EdgeState(false, -1, -1)
 end
 
-DomainState = Union{NodeState, EdgeState}
+AVState = Union{NodeState, EdgeState}
 
 function ==(a::NodeState, b::NodeState)
     return (isequal(a.id, b.id) && isequal(a.p, b.p) && isequal(a.o, b.o) &&
@@ -123,62 +123,62 @@ function Base.hash(a::EdgeState, h::UInt)
     return h
 end
 
-struct DomainAction
+struct AVAction
     value::Char
 end
 
-function ==(a::DomainAction, b::DomainAction)
+function ==(a::AVAction, b::AVAction)
     return isequal(a.value, b.value)
 end
 
-function Base.hash(a::DomainAction, h::UInt)
+function Base.hash(a::AVAction, h::UInt)
     return hash(a.value, h)
 end
 
-mutable struct DomainSSP
+mutable struct AVSSP
     S
     A
     T
     C
     s₀
     G
-    SIndex::Dict{DomainState, Int}
-    AIndex::Dict{DomainAction, Int}
+    SIndex::Dict{AVState, Int}
+    AIndex::Dict{AVAction, Int}
     graph
 end
-function DomainSSP(S::Vector{DomainState},
-                   A::Vector{DomainAction},
+function AVSSP(S::Vector{AVState},
+                   A::Vector{AVAction},
                    T::Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}},
                    C::Array{Array{Float64,1},1},
-                  s₀::DomainState,
-                   G::Set{DomainState},
+                  s₀::AVState,
+                   G::Set{AVState},
                graph::Graph)
     SIndex, AIndex = generate_index_dicts(S, A)
-    return DomainSSP(S, A, T, C, s₀, G, SIndex, AIndex, graph)
+    return AVSSP(S, A, T, C, s₀, G, SIndex, AIndex, graph)
 end
 
-function generate_index_dicts(S::Vector{DomainState}, A::Vector{DomainAction})
-    SIndex = Dict{DomainState, Integer}()
+function generate_index_dicts(S::Vector{AVState}, A::Vector{AVAction})
+    SIndex = Dict{AVState, Integer}()
     for (s, state) ∈ enumerate(S)
         SIndex[state] = s
     end
-    AIndex = Dict{DomainAction, Integer}()
+    AIndex = Dict{AVAction, Integer}()
     for (a, action) ∈ enumerate(A)
         AIndex[action] = a
     end
     return SIndex, AIndex
 end
 
-function generate_states(𝒢::Graph,
+function generate_av_states(𝒢::Graph,
                       init::Int,
                      goals::Vector{Int},
                          w)
     N, E = 𝒢.nodes, 𝒢.edges
-    S = Vector{DomainState}()
-    G = Set{DomainState}()
+    S = Vector{AVState}()
+    G = Set{AVState}()
 
     W = vec(collect(Base.product(
-        1:4, ["day", "night"], ["sunny", "rainy", "snowy"])))
+        0:3, ["day", "night"], ["sunny", "rainy", "snowy"])))
 
     for node_id in keys(N)
         node = N[node_id]
@@ -220,12 +220,12 @@ function generate_states(𝒢::Graph,
     return S, s₀, G
 end
 
-function set_init!(M, init, w)
+function set_init!(M::AVSSP, init, w)
     M.s₀ = NodeState(init, false, false, 0, '↑', w)
 end
 
-function set_goals!(M, goals, w)
-    M.G = Set{DomainState}()
+function set_goals!(M::AVSSP, goals, w)
+    M.G = Set{AVState}()
     for p in [false, true]
         for o in [false, true]
             for v in [0,1,2,3]
@@ -240,22 +240,32 @@ function set_goals!(M, goals, w)
     end
 end
 
-function terminal(M, state::DomainState)
+function terminal(M::AVSSP, state::AVState)
     return state in M.G
 end
 
-function generate_actions()
-    A = Vector{DomainAction}()
+function generate_av_actions()
+    A = Vector{AVAction}()
     for value in ['←', '↑', '→', '↓', '⤉']
-        push!(A, DomainAction(value))
+        push!(A, AVAction(value))
     end
     return A
 end
 
 function competence(state, action)
     if typeof(state) == EdgeState
-        if state.o && state.l == 1
-            return 0
+        if action.value == '↑'
+            if state.r == "None"
+                return 2
+            else
+                return 0
+            end
+        elseif action.value == '⤉'
+            if state.o && state.l == 1
+                return 0
+            else
+                return 2
+            end
         else
             return 2
         end
@@ -286,7 +296,7 @@ function competence(state, action)
     end
 end
 
-function generate_transitions!(M, G)
+function generate_transitions!(M::AVSSP, G)
     S, A, T = M.S, M.A, M.T
 
     for (s, state) in enumerate(S)
@@ -296,7 +306,10 @@ function generate_transitions!(M, G)
                 T[s][a] = [(s, 1.0)]
             end
         end
-
+        w = WorldState(state.w.active_avs + 1, state.w.time, state.w.weather)
+        if w.active_avs == 4
+            w = WorldState(0, state.w.time, state.w.weather)
+        end
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)
                 if competence(state, action) == 0
@@ -304,42 +317,46 @@ function generate_transitions!(M, G)
                     continue
                 end
                 if action.value == '←'
-                    T[s][a] = left_turn_distribution(M, state, s, G)
+                    T[s][a] = left_turn_distribution(M, state, s, G, w)
                 elseif action.value == '→'
-                    T[s][a] = right_turn_distribution(M, state, s, G)
+                    T[s][a] = right_turn_distribution(M, state, s, G, w)
                 elseif action.value == '↑'
-                    T[s][a] = go_straight_distribution(M, state, s, G)
+                    T[s][a] = go_straight_distribution(M, state, s, G, w)
                 elseif action.value == '↓'
                     state′ = NodeState(state.id, state.p, state.o, state.v,
-                                       change_direction(state.θ, '↓'), state.w)
+                                       change_direction(state.θ, '↓'), w)
                     T[s][a] = [(M.SIndex[state′], 1.0)]
                 else
-                    T[s][a] = wait_distribution(M, state, s, G)
+                    T[s][a] = wait_distribution(M, state, s, G, w)
                 end
             end
         elseif typeof(state) == EdgeState
+            state′ = EdgeState(state.u, state.v, state.θ,
+                               state.o, state.l, state.r, w)
             for (a, action) in enumerate(A)
                 if competence(state, action) == 0
-                    T[s][a] = [(s, 1.0)]
+                    T[s][a] = [(M.SIndex[state′], 1.0)]
                     continue
                 end
                 if action.value == '↑'
                     if state.r != "None"
-                        T[s][a] = [(s, 1.0)]
+                        T[s][a] = [(M.SIndex[state′], 1.0)]
                     else
-                        T[s][a] = continue_distribution(M, state, s, G)
+                        T[s][a] = continue_distribution(M, state, s, G, w)
                     end
                 elseif action.value == '⤉'
-                    T[s][a] = pass_obstruction_distribution(M, state, s, G)
+                    T[s][a] = pass_obstruction_distribution(M, state, s, G, w)
                 else
-                    T[s][a] = [(s, 1.0)]
+                    state′ = EdgeState(state.u, state.v, state.θ,
+                                       state.o, state.l, state.r, w)
+                    T[s][a] = [(M.SIndex[state′], 1.0)]
                 end
             end
         end
     end
 end
 
-function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function left_turn_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
     θ′ = change_direction(state.θ, '←')
 
@@ -355,16 +372,16 @@ function left_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gra
         else
             r = "None"
         end
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
 end
 
-function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function right_turn_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
     θ′ = change_direction(state.θ, '→')
 
@@ -380,16 +397,16 @@ function right_turn_distribution(M::DomainSSP, state::DomainState, s::Int, G::Gr
         else
             r = "None"
         end
-        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, true, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, θ′, false, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
 end
 
-function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function go_straight_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
 
     N, E = G.nodes, G.edges
@@ -404,16 +421,16 @@ function go_straight_distribution(M::DomainSSP, state::DomainState, s::Int, G::G
         else
             r = "None"
         end
-        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, state.θ, true, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], p))
 
-        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"], r, state.w)
+        state′ = EdgeState(state.id, dest_id, state.θ, false, E[state.id][dest_id]["num lanes"], r, w)
         push!(T, (M.SIndex[state′], 1-p))
     end
     return T
 end
 
-function wait_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function wait_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::WorldState)
     S = M.S
     T = Vector{Tuple{Int, Float64}}()
 
@@ -423,21 +440,23 @@ function wait_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
     p_vehicles = node["vehicle probabilities"]
 
     for num_vehicle in [0,1,2,3]
-        state′ = NodeState(state.id, false, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, false, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, true, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, true, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, false, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, false, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.id, true, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.id, true, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
     return T
 end
 
-function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function continue_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::WorldState)
     if state.o == true
-        return [(s, 1.0)]
+        state′  = EdgeState(state.u, state.v, state.θ, state.o, state.l, state.r, w)
+        state′′ = EdgeState(state.u, state.v, state.θ, false, state.l, state.r, w)
+        return [(M.SIndex[state′], 0.9), (M.SIndex[state′′], 0.1)]
     end
     T = Vector{Tuple{Int, Float64}}()
 
@@ -468,20 +487,20 @@ function continue_distribution(M::DomainSSP, state::DomainState, s::Int, G::Grap
     p_vehicles = node["vehicle probabilities"]
 
     for num_vehicle in [0,1,2,3]
-        state′ = NodeState(state.v, false, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, false, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, true, false, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, true, false, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*(1-p_occl)*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, false, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, false, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], ((1-p_ped)*p_occl*p_vehicles[num_vehicle + 1])))
-        state′ = NodeState(state.v, true, true, num_vehicle, state.θ, state.w)
+        state′ = NodeState(state.v, true, true, num_vehicle, state.θ, w)
         push!(T, (M.SIndex[state′], (p_ped*p_occl*p_vehicles[num_vehicle + 1])))
     end
 
     return T
 end
 
-function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int, G::Graph)
+function pass_obstruction_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::WorldState)
     T = Vector{Tuple{Int, Float64}}()
 
     N, E = G.nodes, G.edges
@@ -490,7 +509,7 @@ function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int,
         return [(s, 1.0)]
     else
         num_lanes = E[state.u][state.v]["num lanes"]
-        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes, state.r, state.w)
+        state′ = EdgeState(state.u, state.v, state.θ, false, num_lanes, state.r, w)
         s′ = M.SIndex[state′]
         p = 1.0
         if num_lanes == 1
@@ -501,13 +520,16 @@ function pass_obstruction_distribution(M::DomainSSP, state::DomainState, s::Int,
             p = 0.8
         end
         push!(T, (s′, p))
-        push!(T, (s, (1-p)))
+
+        statew = EdgeState(state.u, state.v, state.θ,
+                           state.o, state.l, state.r, w)
+        push!(T, (M.SIndex[statew], (1-p)))
     end
 
     return T
 end
 
-function generate_costs(M::DomainSSP, s::Int, a::Int)
+function generate_costs(M::AVSSP, s::Int, a::Int)
     if M.S[s] in M.G #terminal(M, M.S[s])
         return 0.0
     # elseif M.T[s][a] == [(s, 1.0)]
@@ -535,7 +557,7 @@ function generate_costs(M::DomainSSP, s::Int, a::Int)
     end
 end
 
-function generate_costs!(M)
+function generate_costs!(M::AVSSP)
     for s = 1:length(M.S)
         for a = 1:length(M.A)
             M.C[s][a] = generate_costs(M, s, a)
@@ -544,7 +566,7 @@ function generate_costs!(M)
     # M.C = [[generate_costs(M, s, a) for a=1:length(M.A)] for s=1:length(M.S)]
 end
 
-function check_transition_validity(ℳ::DomainSSP)
+function check_transition_validity(ℳ::AVSSP)
     S, A, T = ℳ.S, ℳ.A, ℳ.T
     for (s, state) in enumerate(S)
         for (a, action) in enumerate(A)
@@ -564,7 +586,7 @@ function check_transition_validity(ℳ::DomainSSP)
     end
 end
 
-function generate_successor(M::DomainSSP,
+function generate_successor(M::AVSSP,
                              s::Integer,
                              a::Integer)::Integer
     thresh = rand()
@@ -578,7 +600,7 @@ function generate_successor(M::DomainSSP,
     end
 end
 
-# function simulate(M::DomainSSP, L)
+# function simulate(M::AVSSP, L)
 #     S, A, C = M.S, M.A, M.C
 #     c = Vector{Float64}()
 #     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
@@ -603,7 +625,7 @@ end
 #     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
 # end
 
-function build_model()
+function build_av()
     # G = generate_map(filepath)
     # G = generate_dummy_graph()
     graph = generate_ma_graph()
@@ -614,17 +636,17 @@ function build_model()
         init = rand(1:16)
     end
     S, s₀, G = generate_states(graph, init, goals, w)
-    A = generate_actions()
+    A = generate_av_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     C = [[0. for a=1:length(A)] for s=1:length(S)]
-    M = DomainSSP(S, A, T, C, s₀, G, graph)
+    M = AVSSP(S, A, T, C, s₀, G, graph)
     generate_transitions!(M, graph)
     generate_costs!(M)
     check_transition_validity(M)
     return M
 end
 
-function solve_model(M::DomainSSP)
+function solve_model(M::AVSSP)
     # ℒ = LRTDPsolver(M, 10000., 100, .001, Dict{Int, Int}(),
     #                  false, Set{Int}(), zeros(length(M.S)),
     #                                     zeros(length(M.A)))
@@ -639,7 +661,7 @@ function solve_model(M::DomainSSP)
     println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
     return ℒ
 end
-function allowed(D::DomainSSP, s::Int, a::Int)
+function allowed(D::AVSSP, s::Int, a::Int)
     return true
 end
 

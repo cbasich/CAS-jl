@@ -317,6 +317,10 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             continue
         end
 
+        if (state.sh[1] == 1 && state.sh[3] == 2) || (state.sh[1] == 2 && state.sh[3] == 1)
+            continue
+        end
+
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
         for (a, action) in enumerate(A)
             if state.state in 𝒟.G
@@ -408,16 +412,23 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                     end
                 end
             end
+            if isempty(T[s][a])
+                println("Error")
+            end
         end
     end
 end
 
 function check_transition_validity(C)
     S, A, T = C.S, C.A, C.T
-    for (s, state) in enumerate(S)
-        if state.state.w != C.s₀.state.w
-            continue
-        end
+    # for (s, state) in enumerate(S)
+    #     if state.state.w.time != C.s₀.state.w.time && state.state.w.weather != C.s₀.state.w.weather
+    #         continue
+    #     end
+    #     if (state.sh[1] == 1 && state.sh[3] == 2) || (state.sh[1] == 2 && state.sh[3] == 1)
+    #         continue
+    #     end
+    for s in keys(T)
         for (a, action) in enumerate(A)
             mass = 0.0
             for (s′, p) in T[s][a]

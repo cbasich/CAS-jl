@@ -4,7 +4,9 @@ end
 
 struct SOSAS
     AV
+    L1
     H
+    L2
     S
     A
     T
@@ -14,9 +16,9 @@ struct SOSAS
     SIndex
     AIndex
 end
-function SOSAS(AV, H, S, A, T, C, s₀, G)
+function SOSAS(AV, L1, H, L2, S, A, T, C, s₀, G)
     SIndex, AIndex = generate_index_dicts(S, A)
-    return SOSAS(AV, H, S, A, T, C, s₀, G, SIndex, AIndex)
+    return SOSAS(AV, L1, H, L2, S, A, T, C, s₀, G, SIndex, AIndex)
 end
 
 function generate_index_dicts(S::Vector{CASstate}, A::Vector{SOSASAction})
@@ -31,7 +33,7 @@ function generate_index_dicts(S::Vector{CASstate}, A::Vector{SOSASAction})
     return SIndex, AIndex
 end
 
-function generate_states(AV::DomainSSP, H::CASSP)
+function generate_states(AV::AVSSP, H::CASSP)
     states = Vector{CASstate}()
     G = Set{CASstate}()
     for sh in H.𝒮.F.SH
@@ -132,10 +134,14 @@ function generate_transitions!(SOSAS, S, A, AV, L1, H, L2)
     T = SOSAS.T
     for s=1:length(S)
         state = S[s]
-        if state.state.w != SOSAS.s₀.state.w
+        if state.state.w.time != SOSAS.s₀.state.w.time || state.state.w.weather != SOSAS.s₀.state.w.weather
             continue
         end
-        println("here")
+
+        if (state.sh[1] == 1 && state.sh[3] == 2) || (state.sh[1] == 2 && state.sh[3] == 1)
+            continue
+        end
+
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
         for a=1:length(A)
             T[s][a] = []
@@ -158,6 +164,32 @@ function generate_transitions!(SOSAS, S, A, AV, L1, H, L2)
             end
         end
     end
+end
+
+function get_transition(SOSAS, s, a)
+    AV, L1, H, L2, S, A = SOSAS.AV, SOSAS.L1, SOSAS.H, SOSAS.L2, SOSAS.S, SOSAS.A
+    T = []
+    state = S[s]
+
+    th = human_state_transition(state.sh, state.state, A[a].operator)
+
+    if A[a].actor == 1 #AV
+        av_s = AV.SIndex[state.state]
+        av_a = L1.π[av_s]
+        t = AV.T[av_s][av_a]
+        for i=1:length(t)
+            for j=1:length(th)
+                push!(T, (M.SIndex[SOSASstate(th[j][1], t[i][1], '⊕')],
+                                                   (t[i][2] * th[j][2])))
+            end
+        end
+    else #Human
+        human_s = H.SIndex[CASstate(state.sh, state.state, '∅')]
+        human_a = L2.π[human_s]
+        T = H.T[human_s][human_a]
+    end
+
+    return T
 end
 
 function generate_costs(M::SOSAS, L1, L2, s, a)
@@ -184,10 +216,19 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
             return M.H.C[human_s][human_a]
         end
     end
+
 end
 
 function generate_costs!(M::SOSAS, L1, L2)
     for s = 1:length(M.S)
+        state = M.S[s]
+        if state.state.w.time != M.s₀.state.w.time || state.state.w.weather != M.s₀.state.w.weather
+            continue
+        end
+
+        if (state.sh[1] == 1 && state.sh[3] == 2) || (state.sh[1] == 2 && state.sh[3] == 1)
+            continue
+        end
         if M.S[s].state.w != M.s₀.state.w
             continue
         end
@@ -217,9 +258,9 @@ function build_sosas(AV, L1, H, L2)
     A = [SOSASAction(1), SOSASAction(2)]
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     costs = [[0. for a=1:length(A)] for s=1:length(S)]
-    M = SOSAS(AV, H, S, A, T, costs, s₀, G)
-    generate_costs!(M, L1, L2)
-    generate_transitions!(M, S, A, AV, L1, H, L2)
+    M = SOSAS(AV, L1, H, L2, S, A, T, generate_costs, s₀, G)
+    # generate_costs!(M, L1, L2)
+    # generate_transitions!(M, S, A, AV, L1, H, L2)
     # check_transition_validity(M)
     return M
 end

@@ -1,7 +1,9 @@
 include("utils.jl")
 include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
+include("av_only.jl")
 include("human_operator.jl")
+include("so_sas.jl")
 
 function simulate_human_only(H, num_runs)
     @time L = solve_model(H)
@@ -44,9 +46,9 @@ function run_human_only()
     H = build_cas(D, [0], ['⊘', '∅'])
 
     tasks = [v for (k,v) in fixed_routes]
+    w = WorldState(2, "day", "sunny")
     episode = 1
     for (init, goal) in tasks
-        w = generate_random_world_state()
         set_route(D, H, init, goal, w)
         generate_transitions!(H.𝒮.D, H.𝒮.A, H.𝒮.F, H, H.S, H.A, H.G)
 
