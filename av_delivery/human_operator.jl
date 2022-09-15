@@ -11,7 +11,6 @@ end
 rand(s::Set) = rand(Base.GLOBAL_RNG, s)
 
 using Plots
-# using GLM
 using DecisionTree
 using DataFrames
 using CSV
@@ -71,10 +70,10 @@ function autonomy_cost(state::CASstate)
     if state.σ == '⊕'
         return 0.0
     elseif state.σ == '∅'
-        if state.sh[3] == 2
-            return 2*(max(state.state.w.active_avs,1)) #1.0
+        if state.sh[3] == 1
+            return 2*state.state.w.active_avs #1.0
         else
-            return 2*(max(state.state.w.active_avs,1))
+            return 0 #2*(max(state.state.w.active_avs,1))
         end
     else
         return 2.0
@@ -139,7 +138,7 @@ end
 function get_consistency(sh)
     o1, o2, oa = sh[1],sh[2],sh[3]
     if oa == 1
-        return 0.95
+        return 1.0
     else
         if o2 == 1
             return 0.7
@@ -314,7 +313,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
     T = C.T
     for s = 1:length(S)
         state = S[s]
-        if state.state.w != C.s₀.state.w
+        if state.state.w.time != C.s₀.state.w.time || state.state.w.weather != C.s₀.state.w.weather
             continue
         end
 
@@ -332,22 +331,43 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_a = 𝒟.AIndex[base_action]
 
             th = ℱ.TH(state.sh, base_state, base_action, action.l)
-
+            w = state.state.w
+            if w.active_avs == 3
+                w = WorldState(0, w.time, w.weather)
+            else
+                w = WorldState(w.active_avs+1, w.time, w.weather)
+            end
             t = 𝒟.T[base_s][base_a]
             if t == [(base_s, 1.0)]
                 T[s][a] = Vector{Tuple{Int, Float64}}()
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
                 for i=1:length(th)
                     push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                                    state.state, state.σ)], th[i][2]))
+                                    dstate′, state.σ)], th[i][2]))
                 end
                 continue
             end
 
             if generate_feedback(state, action, get_consistency(state.sh)) == '⊘'
                 T[s][a] = Vector{Tuple{Int, Float64}}()
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
                 for i=1:length(th)
                     push!(T[s][a], (C.SIndex[CASstate(th[i][1],
-                                    state.state, '⊘')], th[i][2]))
+                                    dstate′, '⊘')], th[i][2]))
                 end
                 continue
             end
@@ -358,7 +378,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                     if state.state.o && action.action.value == '⤉'
                         state′ = CASstate(th[i][1], EdgeState(state.state.u,
                                 state.state.v, state.state.θ, false,
-                                state.state.l, state.state.r, state.state.w), '∅')
+                                state.state.l, state.state.r, w), '∅')
                         push!(T[s][a], (C.SIndex[state′], th[i][2]))
                     elseif !state.state.o && action.action.value == '↑'
                         temp = []
@@ -374,7 +394,10 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
                             push!(T[s][a], (C.SIndex[state′], (temp[j][2]/mass)*th[i][2]))
                         end
                     else
-                        push!(T[s][a], (C.SIndex[CASstate(th[i][1], state.state, '∅')], th[i][2]))
+                        dstate′ = EdgeState(state.state.u, state.state.v,
+                            state.state.θ, state.state.o, state.state.l,
+                            state.state.r, w)
+                        push!(T[s][a], (C.SIndex[CASstate(th[i][1], dstate′, '∅')], th[i][2]))
                     end
                 end
             else
@@ -458,6 +481,11 @@ function generate_feedback(state::CASstate,
     sh = state.sh
     # Request for ToC logic
     if action.l == 0
+        # Operator noise
+        if rand() < 1 - get_consistency(sh)
+            return ['⊘', '∅'][rand(1:2)]
+        end
+
         if sh[3] == 1 # Local operator always accepts
             return '∅'
         else
@@ -609,29 +637,11 @@ end
 function build_cas(𝒟::DomainSSP,
                    L::Vector{Int},
                    Σ::Vector{Char})
-    if ispath(joinpath(abspath(@__DIR__), "params.jld"))
-        κ = load_autonomy_profile()
-    else
-        κ = generate_autonomy_profile(𝒟)
-    end
+
+    κ = generate_autonomy_profile(𝒟)
     𝒜 = AutonomyModel(L, κ, autonomy_cost)
-
     D = Dict{Int, Dict{String, Dict{String, DataFrame}}}()
-
-    for o=1:2
-        D[o] = Dict("node"=> Dict{Int, Dict{String, DataFrame}}(),
-                    "edge"=> Dict{Int, Dict{String, DataFrame}}())
-        for a in ["↑", "→", "↓", "←", "⤉"]
-            D[o]["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$a.csv")))
-            D[o]["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$a.csv")))
-        end
-        # D[o] = Dict("edge"=> Dict{Int, Dict{String, DataFrame}}())
-        # for a in ["↑", "⤉"]
-        #     D[o]["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$a.csv")))
-        # end
-    end
     λ = generate_feedback_profile(𝒟, Σ, L, D)
-
     SH = Set([i for i in x] for x in vec(collect(Base.product(1:2, 1:2, 1:2))))
     ℱ = OperatorModel(SH, human_state_transition, Σ, λ, human_cost, D, 0.9)
     𝒮 = CAS(𝒟, 𝒜, ℱ)
