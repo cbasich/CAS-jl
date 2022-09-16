@@ -954,6 +954,21 @@ function generate_successor(M::DomainSSP,
     end
 end
 
+function generate_successor(M::COCASSP,
+                            s::Int,
+                            a::Int,
+                            σ::Char)
+    TH = human_state_transition(state.sh, state.state, action.action, action.l)
+    sh = sample(first.(TH), aweights(last.(TH)))
+
+    state = M.S[sample(first.(M.T[s][a])), aweights(last.(M.T[s][a]))]
+    while state.sh != sh || state.σ != σ
+        state = M.S[sample(first.(M.T[s][a])), aweights(last.(M.T[s][a]))]
+    end
+
+    return state
+end
+
 function reachable(C, L)
     s, S = C.SIndex[C.s₀], C.S
     reachable = Set{Int}()
