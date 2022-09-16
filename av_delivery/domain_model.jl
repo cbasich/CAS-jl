@@ -178,7 +178,7 @@ function generate_states(𝒢::Graph,
     G = Set{DomainState}()
 
     W = vec(collect(Base.product(
-        0:3, ["day", "night"], ["sunny", "rainy", "snowy"]
+        1:4, ["day", "night"], ["sunny", "rainy", "snowy"]
     )))
 
     for node_id in keys(N)
@@ -264,8 +264,8 @@ function generate_transitions!(M, G)
             end
         end
         w = WorldState(state.w.active_avs + 1, state.w.time, state.w.weather)
-        if w.active_avs == 4
-            w = WorldState(0, state.w.time, state.w.weather)
+        if w.active_avs == 5
+            w = WorldState(1, state.w.time, state.w.weather)
         end
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)

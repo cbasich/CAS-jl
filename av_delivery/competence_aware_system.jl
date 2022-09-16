@@ -192,10 +192,10 @@ function autonomy_cost(state::CASstate)
     if state.σ == '⊕'
         return 0.0
     elseif state.σ == '∅'
-        if state.state.w.active_avs == 0
-            return 3.0
+        if state.state.w.active_avs == 1
+            return 2.0 * 4.0
         else
-            return (state.state.w.active_avs-1.0)
+            return 2.0 * (state.state.w.active_avs-1.0)
         end #1.0
     else
         return 2.0
@@ -606,8 +606,8 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             base_s = 𝒟.SIndex[base_state]
             base_a = 𝒟.AIndex[base_action]
             w = state.state.w
-            if w.active_avs == 3
-                w = WorldState(0, w.time, w.weather)
+            if w.active_avs == 4
+                w = WorldState(1, w.time, w.weather)
             else
                 w = WorldState(w.active_avs+1, w.time, w.weather)
             end
