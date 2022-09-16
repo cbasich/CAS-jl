@@ -40,14 +40,21 @@ function simulate(CAS, L, num_runs)
             end
             TH = human_state_transition(sh, state.state, action.action, action.l)
             sh = sample(first.(TH), aweights(last.(TH)))
-            state = generate_successor(CAS.𝒮.D, state, action, σ)
+
+            state = sample(first.(CAS.T[s][a]), aweights(last.(CAS.T[s][a])))
+            while state.σ != σ
+                state = sample(first.(CAS.T[s][a]), aweights(last.(CAS.T[s][a])))
+            end
+            # state = generate_successor(CAS.𝒮.D, state, action, σ)
         end
 
-        push!(costs, episode_cost)
+        push!(total_costs, episode_cost)
+        push!(domain_costs, domain_cost)
+        push!(human_costs, h_cost)
         CAS.T = T_base
     end
 
-    return mean(costs), std(costs)
+    return mean(total_costs), std(total_costs), mean(domain_costs), std(domain_costs), mean(human_costs), std(human_costs)
 end
 
 function run_cas()
@@ -55,7 +62,7 @@ function run_cas()
     costs = Vector{Float64}()
     stds = Vector{Float64}()
 
-    results = []
+    saved_results = []
     D = build_model()
     C = build_cas(D, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
 
@@ -67,11 +74,10 @@ function run_cas()
 
         println(episode, "   |   Task: $init --> $goal")
         @time L = solve_model(C)
-        c, std = simulate(C, L, 10)
-        println(c, "  |  ", std)
-        push!(costs, c), push!(stds, std)
+        results = simulate(C, L, 10)
+        println(results)
+        push!(saved_results, results)
 
-        results = [costs, stds]
         save_object(joinpath(abspath(@__DIR__), "CAS_results.jld2"), results)
 
         episode += 1
