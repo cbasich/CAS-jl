@@ -71,7 +71,11 @@ function autonomy_cost(state::CASstate)
         return 0.0
     elseif state.σ == '∅'
         if state.sh[3] == 1
-            return 2*state.state.w.active_avs #1.0
+            if state.state.w.active_avs == 0
+                return 4.0 * 4.0
+            else
+                return 4.0*(state.state.w.active_avs-1.0)
+            end #1.0
         else
             return 0 #2*(max(state.state.w.active_avs,1))
         end
@@ -211,7 +215,7 @@ function generate_feedback_profile(𝒟::DomainSSP,
     return λ
 end
 
-function human_cost(sh, state::CASstate, action::CASaction)
+function human_cost(action::CASaction)
     return [1.0 1.0 0.0][action.l + 1]
 end
 ##
@@ -336,8 +340,8 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
             th = ℱ.TH(state.sh, base_state, base_action, action.l)
             w = state.state.w
-            if w.active_avs == 3
-                w = WorldState(0, w.time, w.weather)
+            if w.active_avs == 4
+                w = WorldState(1, w.time, w.weather)
             else
                 w = WorldState(w.active_avs+1, w.time, w.weather)
             end
@@ -474,7 +478,7 @@ function generate_costs(C::CASSP,
     end
     cost = D.C[D.SIndex[state.state]][D.AIndex[action.action]]
     cost += A.μ(state)
-    cost += F.ρ(state.sh, state, action)
+    cost += F.ρ(action)
     return cost
 end
 
@@ -678,7 +682,7 @@ function solve_model(C::CASSP)
     #                     zeros(length(C.S)), zeros(length(C.S)),
     #                     H, zeros(length(C.A)),
     #                     [false for i=1:length(C.S)])
-    ℒ = LRTDPsolver(C, 1000., 10000, .01, Dict{Int, Int}(),
+    ℒ = LRTDPsolver(C, 1000., 10000, .001, Dict{Int, Int}(),
                      false, Set{Int}(), zeros(length(C.𝒮.D.S)), zeros(length(C.S)),
                                              zeros(length(C.A)))
     solve(ℒ, C, C.SIndex[C.s₀])

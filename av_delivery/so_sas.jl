@@ -197,15 +197,38 @@ function get_transition(M::SOSAS, s, a)
     if A[a].operator == 1 #AV
         av_s = AV.SIndex[state.state]
         if !L1.solved[av_s]
+            # av_a = sample(1:length(AV.A))
             av_a = solve(L1, M.AV, av_s)[1]
         else
             av_a = L1.π[av_s]
         end
-        t = AV.T[av_s][av_a]
-        for i=1:length(t)
+        if competence(state.state, AV.A[av_a]) == 0 || (typeof(state.state) == EdgeState && state.state.r != "None")
+            w = state.state.w
+            if w.active_avs == 4
+                w = WorldState(1, w.time, w.weather)
+            else
+                w = WorldState(w.active_avs+1, w.time, w.weather)
+            end
+            if typeof(state.state) == NodeState
+                dstate′ = NodeState(state.state.id, state.state.p,
+                    state.state.o, state.state.v, state.state.θ, w)
+            else
+                dstate′ = EdgeState(state.state.u, state.state.v,
+                    state.state.θ, state.state.o, state.state.l,
+                    state.state.r, w)
+            end
             for j=1:length(th)
-                push!(T, (M.SIndex[CASstate(th[j][1], AV.S[t[i][1]], '⊕')],
-                                                      (t[i][2] * th[j][2])))
+                state′ = CASstate(th[j][1], dstate′, '⊘')
+                push!(T, (M.SIndex[state′], th[j][2]))
+            end
+            return [(s, 1.0)]
+        else
+            t = AV.T[av_s][av_a]
+            for i=1:length(t)
+                for j=1:length(th)
+                    push!(T, (M.SIndex[CASstate(th[j][1], AV.S[t[i][1]], '⊕')],
+                                                          (t[i][2] * th[j][2])))
+                end
             end
         end
     else #Human
@@ -236,16 +259,17 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
         end
         return M.AV.C[av_s][av_a] #+ autonomy_cost(state)
     else
-        human_s = M.H.SIndex[CASstate(state.sh, state.state, '⊘')]
+        human_state = CASstate(state.sh, state.state, '⊘')
+        human_s = M.H.SIndex[human_state]
         if human_s ∉ L2.solved
             human_a = solve(L2, M.H, human_s)[1]
         else
             human_a = L2.π[human_s]
         end
         #No cost model
-        return M.H.C[human_s][human_a] - autonomy_cost(state) - human_cost(state.sh, state, H.A[human_a])
+        return M.H.C[human_s][human_a] - autonomy_cost(human_state) - human_cost(H.A[human_a])
         if state.σ == '⊕'
-            return M.H.C[human_s][human_a] - autonomy_cost(state)
+            return M.H.C[human_s][human_a] - autonomy_cost(human_state)
         else
             return M.H.C[human_s][human_a]
         end

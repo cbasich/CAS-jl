@@ -56,7 +56,7 @@ end
 
 function generate_random_world_state()
     return WorldState(
-        sample(0:3),
+        sample(1:4),
         sample(["day", "night"]),
         sample(["sunny", "rainy", "snowy"], aweights([0.85, 0.1, 0.05]))
     )
@@ -179,7 +179,7 @@ function generate_av_states(𝒢::Graph,
     G = Set{AVState}()
 
     W = vec(collect(Base.product(
-        0:3, ["day", "night"], ["sunny", "rainy", "snowy"])))
+        1:4, ["day", "night"], ["sunny", "rainy", "snowy"])))
 
     for node_id in keys(N)
         node = N[node_id]
@@ -308,15 +308,15 @@ function generate_transitions!(M::AVSSP, G)
             end
         end
         w = WorldState(state.w.active_avs + 1, state.w.time, state.w.weather)
-        if w.active_avs == 4
-            w = WorldState(0, state.w.time, state.w.weather)
+        if w.active_avs == 5
+            w = WorldState(1, state.w.time, state.w.weather)
         end
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)
-                if competence(state, action) == 0
-                    T[s][a] = [(s, 1.0)]
-                    continue
-                end
+                # if competence(state, action) == 0
+                #     T[s][a] = [(s, 1.0)]
+                #     continue
+                # end
                 if action.value == '←'
                     T[s][a] = left_turn_distribution(M, state, s, G, w)
                 elseif action.value == '→'
@@ -335,16 +335,17 @@ function generate_transitions!(M::AVSSP, G)
             state′ = EdgeState(state.u, state.v, state.θ,
                                state.o, state.l, state.r, w)
             for (a, action) in enumerate(A)
-                if competence(state, action) == 0
-                    T[s][a] = [(M.SIndex[state′], 1.0)]
-                    continue
-                end
+                # if competence(state, action) == 0
+                #     T[s][a] = [(M.SIndex[state′], 1.0)]
+                #     continue
+                # end
                 if action.value == '↑'
-                    if state.r != "None"
-                        T[s][a] = [(M.SIndex[state′], 1.0)]
-                    else
-                        T[s][a] = continue_distribution(M, state, s, G, w)
-                    end
+                    # if state.r != "None"
+                    #     T[s][a] = [(M.SIndex[state′], 1.0)]
+                    # else
+                    #     T[s][a] = continue_distribution(M, state, s, G, w)
+                    # end
+                    T[s][a] = continue_distribution(M, state, s, G, w)
                 elseif action.value == '⤉'
                     T[s][a] = pass_obstruction_distribution(M, state, s, G, w)
                 else
@@ -653,13 +654,13 @@ function solve_model(M::AVSSP)
     #                                     zeros(length(M.A)))
     # solve(ℒ, M, M.SIndex[M.s₀])
     # return ℒ
-    ℒ = LAOStarSolver(100, 1000., 1.0, .001, Dict{Integer, Integer}(),
+    ℒ = LAOStarSolver(1000, 1000., 1.0, .001, Dict{Integer, Integer}(),
                         zeros(length(M.S)), zeros(length(M.S)),
                         zeros(length(M.S)), zeros(length(M.A)),
                         [false for i=1:length(M.S)])
     a, total_expanded = solve(ℒ, M, M.SIndex[M.s₀])
-    # println("LAO* expanded $total_expanded nodes.")
-    # println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
+    println("LAO* expanded $total_expanded nodes.")
+    println("Expected cost to goal: $(ℒ.V[M.SIndex[M.s₀]])")
     return ℒ
 end
 function allowed(D::AVSSP, s::Int, a::Int)
