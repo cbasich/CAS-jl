@@ -197,10 +197,10 @@ function autonomy_cost(state::COCASstate)
         return 0.0
     elseif state.σ == '∅'
         if state.sh[3] == 1
-            if state.state.w.active_avs == 0
-                return 2 * 3.0
+            if state.state.w.active_avs == 1
+                return 4 * 4.0
             else
-                return 2*(state.state.w.active_avs-1.0)
+                return 4*(state.state.w.active_avs-1.0)
             end #1.0
         else
             return 0 #2*(max(state.state.w.active_avs,1))
@@ -673,8 +673,8 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
             th = ℱ.TH(state.sh, base_state, base_action, action.l)
             w = state.state.w
-            if w.active_avs == 3
-                w = WorldState(0, w.time, w.weather)
+            if w.active_avs == 4
+                w = WorldState(1, w.time, w.weather)
             else
                 w = WorldState(w.active_avs+1, w.time, w.weather)
             end
