@@ -41,9 +41,9 @@ function simulate(CAS, L, num_runs)
             TH = human_state_transition(sh, state.state, action.action, action.l)
             sh = sample(first.(TH), aweights(last.(TH)))
 
-            state = sample(first.(CAS.T[s][a]), aweights(last.(CAS.T[s][a])))
+            state = CAS.S[sample(first.(CAS.T[s][a]), aweights(last.(CAS.T[s][a])))]
             while state.σ != σ
-                state = sample(first.(CAS.T[s][a]), aweights(last.(CAS.T[s][a])))
+                state = CAS.S[sample(first.(CAS.T[s][a]), aweights(last.(CAS.T[s][a])))]
             end
             # state = generate_successor(CAS.𝒮.D, state, action, σ)
         end
