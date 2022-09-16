@@ -192,7 +192,11 @@ function autonomy_cost(state::CASstate)
     if state.σ == '⊕'
         return 0.0
     elseif state.σ == '∅'
-        return state.state.w.active_avs
+        if state.state.w.active_avs == 0
+            return 3.0
+        else
+            return (state.state.w.active_avs-1.0)
+        end #1.0
     else
         return 2.0
     end
@@ -486,7 +490,7 @@ end
 #     end
 # end
 
-function human_cost(state::CASstate, action::CASaction)
+function human_cost(action::CASaction)
     return [1.0 1.0 0.0][action.l + 1]
 end
 ##
@@ -744,7 +748,7 @@ function generate_costs(C::CASSP,
     state, action = C.S[s], C.A[a]
     cost = D.C[D.SIndex[state.state]][D.AIndex[action.action]]
     cost += A.μ(state)
-    cost += F.ρ(state, action)
+    cost += F.ρ(action)
     return cost
 end
 

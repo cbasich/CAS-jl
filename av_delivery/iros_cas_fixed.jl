@@ -9,31 +9,35 @@ function simulate(CAS, L, num_runs)
     S, A, C = CAS.S, CAS.A, CAS.C
     T_base = deepcopy(CAS.T)
     costs = Vector{Float64}()
+    total_costs = Vector{Float64}()
+    domain_costs = Vector{Float64}()
+    human_costs = Vector{Float64}()
     operator_state = generate_random_operator_state()
 
     for i = 1:num_runs
         state = CAS.s₀
         sh = operator_state
         episode_cost = 0.
+        domain_cost = 0.
+        h_cost = 0.
 
         while !terminal(CAS, state) && episode_cost < 1000.
             s = CAS.SIndex[state]
             a = solve(L, CAS, s)[1]
             action = A[a]
             # println("$i   |   Taking action $action in state $state with operator $sh.")
+
+            cost = C[s][a] - autonomy_cost(state) + autonomy_cost(COCASstate(sh, state.state, state.σ))
+            cost2 = autonomy_cost(COCASstate(sh, state.state, state.σ)) + human_cost(action)
+
+            h_cost += cost2
+            domain_cost += (cost - cost2)
+            episode_cost += cost
+
             σ = '⊕'
             if action.l == 0
                 σ = generate_feedback(state, action, sh, get_consistency(sh))
             end
-
-            episode_cost += C[s][a]
-
-            # remove incorrect autonomy cost
-            episode_cost -= autonomy_cost(state)
-
-            # add correct autonomy cost
-            episode_cost += autonomy_cost(COCASstate(sh, state.state, state.σ))
-
             TH = human_state_transition(sh, state.state, action.action, action.l)
             sh = sample(first.(TH), aweights(last.(TH)))
             state = generate_successor(CAS.𝒮.D, state, action, σ)

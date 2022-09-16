@@ -6,33 +6,42 @@ include("co_competence_aware_system.jl")
 function simulate(COCAS, L, num_runs)
     S, A, C = COCAS.S, COCAS.A, COCAS.C
     T_base = deepcopy(COCAS.T)
-    costs = Vector{Float64}()
-    operator_state = generate_random_operator_state()
+    total_costs = Vector{Float64}()
+    domain_costs = Vector{Float64}()
+    human_costs = Vector{Float64}()
 
     for i = 1:num_runs
         state = COCAS.s₀
-        sh = operator_state
         episode_cost = 0.
-
+        domain_cost = 0.
+        h_cost = 0.
         while !terminal(COCAS, state) && episode_cost < 1000.
             s = COCAS.SIndex[state]
             a = solve(L, COCAS, s)[1]
             action = A[a]
-            # println("$i   |   Taking action $action in state $state with operator $sh.")
+            # println("$i   |   Taking action $action in state $state with operator $sh."
+
+            cost = C[s][a]
+            cost2 = autonomy_cost(state) + human_cost(action)
+
+            h_cost += cost2
+            domain_cost += (cost - cost2)
+            episode_cost += cost
+
             σ = '⊕'
             if action.l == 0
-                σ = generate_feedback(state, action, get_consistency(sh))
+                σ = generate_feedback(state, action, get_consistency(state.sh))
             end
-
-            episode_cost += C[s][a]
             state = generate_successor(COCAS.𝒮.D, state, action, σ)
         end
 
-        push!(costs, episode_cost)
+        push!(total_costs, episode_cost)
+        push!(domain_costs, domain_cost)
+        push!(human_costs, h_cost)
         COCAS.T = T_base
     end
 
-    return mean(costs), std(costs)
+    return mean(total_costs), std(total_costs), mean(domain_costs), std(domain_costs), mean(human_costs), std(human_costs)
 end
 
 function run_cocas()
@@ -40,11 +49,11 @@ function run_cocas()
     costs = Vector{Float64}()
     stds = Vector{Float64}()
 
-    results = []
+    saved_results = []
     D = build_model()
     C = build_cocas(D, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
 
-    w = WorldState(2, "day", "sunny")
+    w = WorldState(2, "night", "snowy")
     episode = 1
     for (init, goal) in tasks
         set_route(D, C, init, goal, w)
@@ -52,12 +61,10 @@ function run_cocas()
 
         println(episode, "   |   Task: $init --> $goal")
         @time L = solve_model(C)
-        c, std = simulate(C, L, 10)
-        println(c, "  |  ", std)
-        push!(costs, c), push!(stds, std)
-
-        results = [costs, stds]
-        save_object(joinpath(abspath(@__DIR__), "COCAS_results.jld2"), results)
+        results = simulate(C, L, 1000)
+        println(results)
+        push!(saved_results, results)
+        save_object(joinpath(abspath(@__DIR__), "COCAS_results.jld2"), saved_results)
 
         episode += 1
     end

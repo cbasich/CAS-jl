@@ -197,7 +197,11 @@ function autonomy_cost(state::COCASstate)
         return 0.0
     elseif state.σ == '∅'
         if state.sh[3] == 1
-            return 2*state.state.w.active_avs #1.0
+            if state.state.w.active_avs == 0
+                return 2 * 3.0
+            else
+                return 2*(state.state.w.active_avs-1.0)
+            end #1.0
         else
             return 0 #2*(max(state.state.w.active_avs,1))
         end
@@ -539,7 +543,7 @@ end
 #     end
 # end
 
-function human_cost(sh, state::COCASstate, action::COCASaction)
+function human_cost(action::COCASaction)
     return [1.0 1.0 0.0][action.l + 1]
 end
 ##
@@ -826,7 +830,7 @@ function generate_costs(C::COCASSP,
     state, action = C.S[s], C.A[a]
     cost = D.C[D.SIndex[state.state]][D.AIndex[action.action]]
     cost += A.μ(state)
-    cost += F.ρ(state.sh, state, action)
+    cost += F.ρ(action)
     return cost
 end
 
