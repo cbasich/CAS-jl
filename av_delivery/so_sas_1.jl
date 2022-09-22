@@ -204,8 +204,8 @@ function get_transition(M::SOSAS, s, a)
         end
         if competence(state.state, AV.A[av_a]) == 0 || (typeof(state.state) == EdgeState && state.state.r != "None")
             w = state.state.w
-            if w.active_avs == 4
-                w = WorldState(1, w.time, w.weather)
+            if w.active_avs == 3
+                w = WorldState(0, w.time, w.weather)
             else
                 w = WorldState(w.active_avs+1, w.time, w.weather)
             end
@@ -257,7 +257,7 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
         else
             av_a = L1.π[av_s]
         end
-        return M.AV.C[av_s][av_a] + autonomy_cost(state)
+        return M.AV.C[av_s][av_a] #+ autonomy_cost(state)
     else
         human_state = CASstate(state.sh, state.state, '⊘')
         human_s = M.H.SIndex[human_state]
@@ -267,7 +267,7 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
             human_a = L2.π[human_s]
         end
         #No cost model
-        # return M.H.C[human_s][human_a] - autonomy_cost(human_state) - human_cost(M.H.A[human_a])
+        return M.H.C[human_s][human_a] - autonomy_cost(human_state) - human_cost(H.A[human_a])
         if state.σ == '⊕'
             return M.H.C[human_s][human_a] - autonomy_cost(human_state)
         else

@@ -60,13 +60,16 @@ function bellman_update(solver, s)
     return residual
 end
 
-function solve(solver, M, s)
+function solve(solver::LRTDPsolverSOSAS, M, s)
     trials = 0
+    # println("Solving...$s")
     while s ∉ solver.solved && trials < solver.max_trials
+        # println(trials, "  |  $s")
         trial(solver, s)
-        # println(trials)
         trials += 1
     end
+    # println(trials)
+    bellman_update(solver, s)
     return solver.π[s]
 end
 
@@ -83,10 +86,11 @@ function generate_successor(T)
     println("No successor found")
 end
 
-function trial(solver, s)
+function trial(solver::LRTDPsolverSOSAS, s)
     total_cost = 0.
     visited = Set()
     M = solver.M
+    # println(s∉ solver.solved)
     while s ∉ solver.solved
         # println(s)
         if total_cost > solver.dead_end_cost
@@ -94,6 +98,7 @@ function trial(solver, s)
         end
         state = M.S[s]
         if terminal(M, state)
+            # println("Terminating...")
             # total_cost += autonomy_cost(state)
             break
         end
@@ -103,9 +108,11 @@ function trial(solver, s)
         bellman_update(solver, s)
 
         a = solver.π[s]
+        # println(s, "    |    ", a)
         if typeof(solver.M) == SOSAS
             total_cost += generate_costs(solver.M, solver.M.L1, solver.M.L2, s, a)
             s = generate_successor(get_transition(solver.M, s, a))
+            # println(total_cost)
         else
             total_cost += M.C[s][a]
             # println(a)
@@ -125,7 +132,7 @@ function trial(solver, s)
     end
 end
 
-function check_solved(solver, s)
+function check_solved(solver::LRTDPsolverSOSAS, s)
     rv = true
 
     _open = Set()

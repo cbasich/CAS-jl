@@ -870,6 +870,22 @@ function generate_successor(M::DomainSSP,
     end
 end
 
+function generate_successor(C::CASSSP,
+                        state::CASstate,
+                       action::CASaction,
+                            σ::Char)
+    s, a = M.SIndex[state.state], M.AIndex[action.action]
+    thresh = rand()
+    p = 0.
+    T = M.T[s][a]
+    for (s′, prob) ∈ T
+        p += prob
+        if p >= thresh
+            return CASstate(M.S[s′], σ)
+        end
+    end
+end
+
 function reachable(C, L)
     s, S = C.SIndex[C.s₀], C.S
     reachable = Set{Int}()

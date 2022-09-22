@@ -17,7 +17,7 @@ function simulate(AV, num_runs)
             s = AV.SIndex[state]
             a = solve(L, AV, s)[1]
             action = A[a]
-            println("taking action $action in state $state.")
+            # println("taking action $action in state $state.")
             episode_cost += C[s][a]
             state = AV.S[generate_successor(AV, s, a)]
 
@@ -45,7 +45,7 @@ function simulate(AV, num_runs)
 end
 
 function run_full_autonomy()
-    AV = build_model()
+    AV = build_av()
     tasks = [v for (k,v) in fixed_routes]
     episode = 0
     for (init, goal) in tasks

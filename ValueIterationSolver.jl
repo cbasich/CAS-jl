@@ -17,7 +17,8 @@ function lookahead(𝒱::ValueIterationSolver, M, s::Integer, a::Integer)
     for (sp, p) in T
         q += p * V[sp]
     end
-    return C(M, s, a) + 0.99*q
+    return M.C[s][a] + 0.99*q
+    # return C(M, s, a) + 0.99*q
 end
 
 function backup(𝒱::ValueIterationSolver, M, s::Integer)
@@ -36,12 +37,13 @@ function solve(𝒱::ValueIterationSolver, M)
         residual = 0.
         for s = 1:length(M.S)
             a, q = backup(𝒱, M, s)
+            println(q)
             # println(𝒱.V[s], "   |   ", q, "   |   ", abs(𝒱.V[s] - q))
             residual = max(residual, abs(𝒱.V[s] - q))
             𝒱.V[s] = q
             𝒱.π[s] = a
         end
-        # println(residual)
+        println(residual)
         if residual < 𝒱.eps
             break
         end

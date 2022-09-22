@@ -95,3 +95,5 @@ function run_cas()
         end
     end
 end
+
+run_cas()

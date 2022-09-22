@@ -32,7 +32,7 @@ function simulate(COCAS, L, num_runs)
             if action.l == 0
                 σ = generate_feedback(state, action, get_consistency(state.sh))
             end
-            state = generate_successor(COCASs, s, a, σ)
+            state = generate_successor(COCAS, s, a, σ)
         end
 
         push!(total_costs, episode_cost)
@@ -53,7 +53,7 @@ function run_cocas()
     D = build_model()
     C = build_cocas(D, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
 
-    w = WorldState(2, "night", "snowy")
+    w = WorldState(2, "day", "sunny")
     episode = 1
     for (init, goal) in tasks
         set_route(D, C, init, goal, w)
