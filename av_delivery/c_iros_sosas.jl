@@ -6,7 +6,7 @@ include("../ValueIterationSolver.jl")
 
 include("human_operator.jl")
 include("av_only.jl")
-include("so_sas.jl")
+include("c_so_sas.jl")
 
 
 function simulate_sosas(M::SOSAS, num_runs)
@@ -34,12 +34,11 @@ function simulate_sosas(M::SOSAS, num_runs)
             # episode_cost += generate_costs(M, M.L1, M.L2, s, a)
             # domain_cost += generate_costs(M, M.L1, M.L2, s, a)
             # println(generate_costs(M, M.L1, M.L2, s, a))
-            human_cost += autonomy_cost(state)
             # println(autonomy_cost(state))
             if action.operator == 2
                 cost2 += 1
-                human_cost += 1
             end
+            human_cost += cost2
             domain_cost += (cost - cost2)
             episode_cost += cost
 

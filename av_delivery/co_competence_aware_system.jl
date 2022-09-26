@@ -60,22 +60,26 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            κ[s][a] = competence(state, action)
-            # if typeof(state) == EdgeState && action.value == '↑'
-            #     if state.r == "None"
-            #         κ[s][a] = 2
-            #     else
-            #         κ[s][a] = 0
-            #     end
-            # else
-            #     if typeof(state) == NodeState && action.value == '⤉'
-            #         κ[s][a] = 2
-            #     elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
-            #         κ[s][a] = 2
-            #     else
-            #         κ[s][a] = 1
-            #     end
-            # end
+
+            # FIXED COMPETENCE
+            # κ[s][a] = competence(state, action)
+
+            # LEARNED COMPETENCE
+            if typeof(state) == EdgeState && action.value == '↑'
+                if state.r == "None"
+                    κ[s][a] = 2
+                else
+                    κ[s][a] = 0
+                end
+            else
+                if typeof(state) == NodeState && action.value == '⤉'
+                    κ[s][a] = 2
+                elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
+                    κ[s][a] = 2
+                else
+                    κ[s][a] = 1
+                end
+            end
         end
     end
     return κ
@@ -347,66 +351,71 @@ function generate_feedback_profile(𝒟::DomainSSP,
                                                                for s=1:length(S))
                                                                for sh=1:2)
                                                                for o=1:2)
-    Threads.@threads for s=1:length(S)
-        state = S[s]
-        for a=1:length(A)
-            action = A[a]
-            for o=1:2
-                for sh=1:2
-                    for l=0:1
-                        if o == 1
-                            σ = generate_feedback(COCASstate([1,1,1],state,'∅'), COCASaction(action,l), 1.0)
-                            if σ == '⊕'
-                                λ[o][sh][s][a][l]['⊕'] = 1.
-                                λ[o][sh][s][a][l]['⊖'] = 0.
-                            elseif σ == '⊖'
-                                λ[o][sh][s][a][l]['⊕'] = 0.
-                                λ[o][sh][s][a][l]['⊖'] = 1.
-                            elseif σ == '∅'
-                                λ[o][sh][s][a][l]['∅'] = 1.
-                                λ[o][sh][s][a][l]['⊘'] = 0.
-                            else
-                                λ[o][sh][s][a][l]['∅'] = 0.
-                                λ[o][sh][s][a][l]['⊘'] = 1.
-                            end
-                        else
-                            if sh == 1
-                                σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
-                                if σ == '⊕'
-                                    λ[o][sh][s][a][l]['⊕'] = .8
-                                    λ[o][sh][s][a][l]['⊖'] = .2
-                                elseif σ == '⊖'
-                                    λ[o][sh][s][a][l]['⊕'] = .2
-                                    λ[o][sh][s][a][l]['⊖'] = .8
-                                elseif σ == '∅'
-                                    λ[o][sh][s][a][l]['∅'] = .8
-                                    λ[o][sh][s][a][l]['⊘'] = .2
-                                else
-                                    λ[o][sh][s][a][l]['∅'] = 0.
-                                    λ[o][sh][s][a][l]['⊘'] = 1.
-                                end
-                            else
-                                σ = generate_feedback(COCASstate([2,2,2],state,'∅'), COCASaction(action,l), 1.0)
-                                if σ == '⊕'
-                                    λ[o][sh][s][a][l]['⊕'] = .7
-                                    λ[o][sh][s][a][l]['⊖'] = .3
-                                elseif σ == '⊖'
-                                    λ[o][sh][s][a][l]['⊕'] = .3
-                                    λ[o][sh][s][a][l]['⊖'] = .7
-                                elseif σ == '∅'
-                                    λ[o][sh][s][a][l]['∅'] = .7
-                                    λ[o][sh][s][a][l]['⊘'] = .3
-                                else
-                                    λ[o][sh][s][a][l]['∅'] = 0.
-                                    λ[o][sh][s][a][l]['⊘'] = 1.
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
+
+    ##  SET COMPETENCE VALUES FOR FIXED COCAS
+    # Threads.@threads for s=1:length(S)
+    #     state = S[s]
+    #     for a=1:length(A)
+    #         action = A[a]
+    #         for o=1:2
+    #             for sh=1:2
+    #                 for l=0:1
+    #                     if o == 1
+    #                         σ = generate_feedback(COCASstate([1,1,1],state,'∅'), COCASaction(action,l), 1.0)
+    #                         if σ == '⊕'
+    #                             λ[o][sh][s][a][l]['⊕'] = 1.
+    #                             λ[o][sh][s][a][l]['⊖'] = 0.
+    #                         elseif σ == '⊖'
+    #                             λ[o][sh][s][a][l]['⊕'] = 0.
+    #                             λ[o][sh][s][a][l]['⊖'] = 1.
+    #                         elseif σ == '∅'
+    #                             λ[o][sh][s][a][l]['∅'] = 1.
+    #                             λ[o][sh][s][a][l]['⊘'] = 0.
+    #                         else
+    #                             λ[o][sh][s][a][l]['∅'] = 0.
+    #                             λ[o][sh][s][a][l]['⊘'] = 1.
+    #                         end
+    #                     else
+    #                         if sh == 1
+    #                             σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
+    #                             if σ == '⊕'
+    #                                 λ[o][sh][s][a][l]['⊕'] = .8
+    #                                 λ[o][sh][s][a][l]['⊖'] = .2
+    #                             elseif σ == '⊖'
+    #                                 λ[o][sh][s][a][l]['⊕'] = .2
+    #                                 λ[o][sh][s][a][l]['⊖'] = .8
+    #                             elseif σ == '∅'
+    #                                 λ[o][sh][s][a][l]['∅'] = .8
+    #                                 λ[o][sh][s][a][l]['⊘'] = .2
+    #                             else
+    #                                 λ[o][sh][s][a][l]['∅'] = 0.
+    #                                 λ[o][sh][s][a][l]['⊘'] = 1.
+    #                             end
+    #                         else
+    #                             σ = generate_feedback(COCASstate([2,2,2],state,'∅'), COCASaction(action,l), 1.0)
+    #                             if σ == '⊕'
+    #                                 λ[o][sh][s][a][l]['⊕'] = .7
+    #                                 λ[o][sh][s][a][l]['⊖'] = .3
+    #                             elseif σ == '⊖'
+    #                                 λ[o][sh][s][a][l]['⊕'] = .3
+    #                                 λ[o][sh][s][a][l]['⊖'] = .7
+    #                             elseif σ == '∅'
+    #                                 λ[o][sh][s][a][l]['∅'] = .7
+    #                                 λ[o][sh][s][a][l]['⊘'] = .3
+    #                             else
+    #                                 λ[o][sh][s][a][l]['∅'] = 0.
+    #                                 λ[o][sh][s][a][l]['⊘'] = 1.
+    #                             end
+    #                         end
+    #                     end
+    #                 end
+    #             end
+    #         end
+    #
+
+    ##
+    ## OLD CODE DEPRECATED
+    ##
     # for o=1:2
     #     for (a, action) in enumerate(A)
     #         # X_n, Y_n = split_data(D[o]["node"][string(action.value)])
@@ -442,106 +451,106 @@ function generate_feedback_profile(𝒟::DomainSSP,
     return λ
 end
 
-# function update_feedback_profile!(C)
-#     λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
-#     S, A = 𝒟.S, 𝒟.A
-#     for o=1:2
-#         for (a, action) in enumerate(A)
-#             X_n, Y_n, M_n = missing, missing, missing
-#             failed_to_build_node, failed_to_build_edge = false, false
-#             try
-#                 X_n, Y_n = split_data(D[o]["node"][string(action.value)])
-#                 M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
-#             catch
-#                 failed_to_build_node = true
-#             end
+function update_feedback_profile!(C)
+    λ, 𝒟, Σ, L, D = C.𝒮.F.λ, C.𝒮.D, C.𝒮.F.Σ, C.𝒮.A.L, C.𝒮.F.D
+    S, A = 𝒟.S, 𝒟.A
+    for o=1:2
+        for (a, action) in enumerate(A)
+            X_n, Y_n, M_n = missing, missing, missing
+            failed_to_build_node, failed_to_build_edge = false, false
+            try
+                X_n, Y_n = split_data(D[o]["node"][string(action.value)])
+                M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
+            catch
+                failed_to_build_node = true
+            end
+
+            X_e, Y_e, M_e = missing, missing, missing
+            if action.value ∈ ['↑', '⤉']
+                try
+                    X_e, Y_e = split_data(D[o]["edge"][string(action.value)])
+                    M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
+                catch
+                    failed_to_build_edge = true
+                end
+            end
+
+            for (s, state) in enumerate(S)
+                if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
+                    continue
+                end
+                f = get_state_features(state)
+                for sh=1:2
+                    for l=0:1
+                        if typeof(state) == NodeState
+                            if failed_to_build_node
+                                for σ ∈ Σ
+                                    λ[o][sh][s][a][l][σ] = 0.5
+                                end
+                                continue
+                            else
+                                pred = []
+                                try
+                                    pred = apply_forest_proba(M_n, hcat(f,sh,l), [0,1])
+                                catch
+                                    pred = [0.5 0.5]
+                                end
+                                for σ in Σ
+                                    if σ == '⊖' || σ == '⊘'
+                                        λ[o][sh][s][a][l][σ] = pred[1]
+                                    else
+                                        λ[o][sh][s][a][l][σ] = pred[2]
+                                    end
+                                end
+                            end
+                        else
+                            if failed_to_build_edge
+                                for σ ∈ Σ
+                                    λ[o][sh][s][a][l][σ] = 0.5
+                                end
+                                continue
+                            else
+                                pred = []
+                                try
+                                    pred = apply_forest_proba(M_e, hcat(f,sh,l), [0,1])
+                                catch
+                                    pred = [0.5 0.5]
+                                end
+                                for σ in Σ
+                                    if σ == '⊖' || σ == '⊘'
+                                        λ[o][sh][s][a][l][σ] = pred[1]
+                                    else
+                                        λ[o][sh][s][a][l][σ] = pred[2]
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return λ
+end
 #
-#             X_e, Y_e, M_e = missing, missing, missing
-#             if action.value ∈ ['↑', '⤉']
-#                 try
-#                     X_e, Y_e = split_data(D[o]["edge"][string(action.value)])
-#                     M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
-#                 catch
-#                     failed_to_build_edge = true
-#                 end
-#             end
+function save_feedback_profile(λ)
+    save_object(joinpath(abspath(@__DIR__),"params.jld2"), λ)
+end
 #
-#             for (s, state) in enumerate(S)
-#                 if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-#                     continue
-#                 end
-#                 f = get_state_features(state)
-#                 for sh=1:2
-#                     for l=0:1
-#                         if typeof(state) == NodeState
-#                             if failed_to_build_node
-#                                 for σ ∈ Σ
-#                                     λ[o][sh][s][a][l][σ] = 0.5
-#                                 end
-#                                 continue
-#                             else
-#                                 pred = []
-#                                 try
-#                                     pred = apply_forest_proba(M_n, hcat(f,sh,l), [0,1])
-#                                 catch
-#                                     pred = [0.5 0.5]
-#                                 end
-#                                 for σ in Σ
-#                                     if σ == '⊖' || σ == '⊘'
-#                                         λ[o][sh][s][a][l][σ] = pred[1]
-#                                     else
-#                                         λ[o][sh][s][a][l][σ] = pred[2]
-#                                     end
-#                                 end
-#                             end
-#                         else
-#                             if failed_to_build_edge
-#                                 for σ ∈ Σ
-#                                     λ[o][sh][s][a][l][σ] = 0.5
-#                                 end
-#                                 continue
-#                             else
-#                                 pred = []
-#                                 try
-#                                     pred = apply_forest_proba(M_e, hcat(f,sh,l), [0,1])
-#                                 catch
-#                                     pred = [0.5 0.5]
-#                                 end
-#                                 for σ in Σ
-#                                     if σ == '⊖' || σ == '⊘'
-#                                         λ[o][sh][s][a][l][σ] = pred[1]
-#                                     else
-#                                         λ[o][sh][s][a][l][σ] = pred[2]
-#                                     end
-#                                 end
-#                             end
-#                         end
-#                     end
-#                 end
-#             end
-#         end
-#     end
-#     return λ
-# end
+function load_feedback_profile()
+    return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
+end
 #
-# function save_feedback_profile(λ)
-#     save_object(joinpath(abspath(@__DIR__),"params.jld2"), λ)
-# end
-#
-# function load_feedback_profile()
-#     return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
-# end
-#
-# function save_data(D)
-#     for o=1:2
-#         for k in keys(D[o]["edge"])
-#             record_data(D[o]["edge"][k], joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$k.csv"), false)
-#         end
-#         for k in keys(D[o]["node"])
-#             record_data(D[o]["node"][k], joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$k.csv"), false)
-#         end
-#     end
-# end
+function save_data(D)
+    for o=1:2
+        for k in keys(D[o]["edge"])
+            record_data(D[o]["edge"][k], joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$k.csv"), false)
+        end
+        for k in keys(D[o]["node"])
+            record_data(D[o]["node"][k], joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$k.csv"), false)
+        end
+    end
+end
 
 function human_cost(action::COCASaction)
     return [1.0 1.0 0.0][action.l + 1]
@@ -904,8 +913,18 @@ function generate_feedback(state::COCASstate,
     end
 
     if typeof(state.state) == EdgeState
-        if state.state.o && state.state.l == 1
-            return (action.l == 1) ? '⊖' : '⊘'
+        if action.action.value == '↑'
+            if state.state.r == "None"
+                return (action.l == 1) ? '⊕' : '∅'
+            else
+                return (action.l == 1) ? '⊖' : '⊘'
+            end
+        elseif action.action.value == '⤉'
+            if state.state.o && state.state.l == 1
+                return (action.l == 1) ? '⊖' : '⊘'
+            else
+                return (action.l == 1) ? '⊕' : '∅'
+            end
         else
             return (action.l == 1) ? '⊕' : '∅'
         end
@@ -913,13 +932,16 @@ function generate_feedback(state::COCASstate,
         if action.action.value == '⤉'
             return (action.l == 1) ? '⊕' : '∅'
         elseif action.action.value == '→'
-            if state.state.o && state.state.p && state.state.v > 1
+            if ((state.state.o || state.state.w.weather == "snowy" ||
+               (state.state.w.time == "night" && state.state.w.weather == "rainy"))
+                && state.state.p && state.state.v > 1)
                 return (action.l == 1) ? '⊖' : '⊘'
             else
                 return (action.l == 1) ? '⊕' : '∅'
             end
         else
-            if state.state.o
+            if (state.state.o || state.state.w.weather == "snowy" ||
+               (state.state.w.time == "night" && state.state.w.weather == "rainy"))
                 if state.state.p || state.state.v > 1
                     return (action.l == 1) ? '⊖' : '⊘'
                 else
@@ -963,8 +985,13 @@ function generate_successor(M::COCASSP,
     sh = sample(first.(TH), aweights(last.(TH)))
 
     state = M.S[sample(first.(M.T[s][a]), aweights(last.(M.T[s][a])))]
+    if terminal(M, state)
+        return state
+    end
+
     while state.sh != sh || state.σ != σ
-        println(sample(first.(M.T[s][a]), aweights(last.(M.T[s][a]))))
+        # println(sample(first.(M.T[s][a]), aweights(last.(M.T[s][a]))))
+        # println(s, " | ", a, " | ", σ)
         state = M.S[sample(first.(M.T[s][a]), aweights(last.(M.T[s][a])))]
     end
 

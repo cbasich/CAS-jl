@@ -1,0 +1,154 @@
+COCAS EXPERIMENT 2-DAY-SUNNY
+
+1   |   Task: 10 --> 72
+LAO* expanded 544 nodes.
+Expected cost to goal: 39.97607619115331
+ 17.282901 seconds (206.40 M allocations: 4.345 GiB, 15.08% gc time)
+(39.71, 4.004489472571496, 38.892, 2.4319231587881758, 0.818, 2.3673783982457226)
+
+
+2   |   Task: 2 --> 11
+LAO* expanded 2832 nodes.
+Expected cost to goal: 106.14315902928597
+250.875570 seconds (3.18 G allocations: 66.629 GiB, 8.53% gc time)
+(112.194, 6.428817441310157, 107.815, 3.5819834736645024, 4.379, 4.856020998712829)
+
+
+3   |   Task: 11 --> 12
+LAO* expanded 3040 nodes.
+Expected cost to goal: 119.87229932165087
+330.755062 seconds (4.18 G allocations: 87.495 GiB, 8.63% gc time)
+(129.175, 8.813628937903788, 120.999, 5.025958541339084, 8.176, 6.35825852348357)
+
+
+4   |   Task: 12 --> 10
+LAO* expanded 3144 nodes.
+Expected cost to goal: 126.42869402209995
+301.715101 seconds (3.84 G allocations: 80.289 GiB, 8.58% gc time)
+(142.849, 10.812266372232239, 130.414, 5.97882516472512, 12.435, 8.000111047777825)
+
+
+5   |   Task: 71 --> 10
+LAO* expanded 984 nodes.
+Expected cost to goal: 70.95708531204673
+ 63.299547 seconds (763.65 M allocations: 16.025 GiB, 9.34% gc time)
+(77.928, 7.557905658179253, 73.154, 4.367305503094255, 4.774, 5.45441790429324)
+
+
+6   |   Task: 10 --> 71
+LAO* expanded 776 nodes.
+Expected cost to goal: 61.44829945918538
+ 54.593508 seconds (624.73 M allocations: 13.108 GiB, 10.17% gc time)
+(66.48, 7.106342244790925, 62.044, 4.335765545190706, 4.436, 4.778361302448438)
+
+
+7   |   Task: 72 --> 2
+LAO* expanded 1880 nodes.
+Expected cost to goal: 66.91609042120973
+104.567184 seconds (1.29 G allocations: 27.050 GiB, 8.35% gc time)
+(69.214, 4.088877954026376, 67.632, 2.5610808529086184, 1.582, 3.1040152884467087)
+
+
+8   |   Task: 2 --> 72
+LAO* expanded 1424 nodes.
+Expected cost to goal: 76.59455991321546
+ 87.548857 seconds (1.01 G allocations: 21.277 GiB, 9.20% gc time)
+(76.582, 2.364078015816074, 76.392, 1.891008173412244, 0.19, 1.1310080367438513)
+
+
+9   |   Task: 12 --> 72
+LAO* expanded 2104 nodes.
+Expected cost to goal: 108.61769447603155
+144.574980 seconds (1.79 G allocations: 37.591 GiB, 8.65% gc time)
+(112.868, 7.3903445923172715, 108.67, 4.630825471181626, 4.198, 4.989357642992702)
+
+
+10   |   Task: 72 --> 11
+LAO* expanded 1152 nodes.
+Expected cost to goal: 57.38388528472651
+ 76.698702 seconds (970.63 M allocations: 20.372 GiB, 8.73% gc time)
+(62.11, 6.838469467992429, 57.132, 3.470247630734531, 4.978, 5.200053514778147)
+
+
+11   |   Task: 2 --> 71
+LAO* expanded 1128 nodes.
+Expected cost to goal: 66.10771121422081
+ 60.048746 seconds (754.58 M allocations: 15.854 GiB, 9.46% gc time)
+(68.441, 3.889942242585442, 67.324, 2.8169059194369566, 1.117, 2.646566703356504)
+
+
+12   |   Task: 71 --> 12
+LAO* expanded 3576 nodes.
+Expected cost to goal: 139.40802191997483
+442.379739 seconds (5.40 G allocations: 112.809 GiB, 8.52% gc time)
+(149.552, 9.154840637996223, 142.002, 5.814447850295316, 7.55, 6.15884984647551)
+
+
+13   |   Task: 12 --> 11
+LAO* expanded 2184 nodes.
+Expected cost to goal: 109.99803876225644
+176.527667 seconds (2.18 G allocations: 45.692 GiB, 8.17% gc time)
+(119.977, 9.706321841134452, 111.779, 5.644822674187651, 8.198, 6.973480151647771)
+
+
+14   |   Task: 71 --> 2
+LAO* expanded 1288 nodes.
+Expected cost to goal: 81.74836917633304
+ 86.576023 seconds (1.06 G allocations: 22.264 GiB, 8.52% gc time)
+(84.055, 4.207217093956014, 82.444, 2.7313594278901343, 1.611, 3.2199451931744196)
+
+
+15   |   Task: 72 --> 10
+LAO* expanded 696 nodes.
+Expected cost to goal: 39.97609314019884
+ 24.309756 seconds (296.60 M allocations: 6.252 GiB, 12.39% gc time)
+(39.75, 4.16327189033251, 38.876, 2.4245623321545064, 0.874, 2.5378267404542343)
+
+
+16   |   Task: 10 --> 2
+LAO* expanded 2296 nodes.
+Expected cost to goal: 106.10982967255347
+199.231130 seconds (2.47 G allocations: 51.790 GiB, 8.83% gc time)
+(110.583, 6.494866764937853, 107.276, 3.548579492757126, 3.307, 4.8820677571686355)
+
+
+17   |   Task: 10 --> 12
+LAO* expanded 3440 nodes.
+Expected cost to goal: 136.66661893148705
+428.216345 seconds (5.35 G allocations: 111.778 GiB, 8.55% gc time)
+(151.288, 10.673189447066559, 139.077, 5.9015166609015735, 12.211, 7.9730827820266015)
+
+
+18   |   Task: 12 --> 71
+LAO* expanded 3272 nodes.
+Expected cost to goal: 129.00541224401888
+288.122096 seconds (3.67 G allocations: 76.815 GiB, 8.51% gc time)
+(141.431, 9.933978202257288, 133.455, 6.663360666763836, 7.976, 6.669775851549277)
+
+
+19   |   Task: 71 --> 11
+LAO* expanded 1752 nodes.
+Expected cost to goal: 88.28529444456606
+124.282785 seconds (1.57 G allocations: 32.951 GiB, 8.30% gc time)
+(99.797, 9.547090548326121, 91.116, 5.366688489687598, 8.681, 7.062656732428678)
+
+
+20   |   Task: 11 --> 71
+LAO* expanded 1144 nodes.
+Expected cost to goal: 77.31342032034942
+105.174707 seconds (1.32 G allocations: 27.686 GiB, 8.72% gc time)
+(88.692, 9.20292506922825, 80.625, 5.195128907386645, 8.067, 6.280920391229374)
+
+
+21   |   Task: 11 --> 72
+LAO* expanded 688 nodes.
+Expected cost to goal: 57.383897939511364
+ 41.024111 seconds (515.40 M allocations: 10.817 GiB, 10.30% gc time)
+(61.345, 6.8509057729551275, 56.512, 3.0044771396838548, 4.833, 5.498121528334958)
+
+
+22   |   Task: 72 --> 12
+LAO* expanded 3512 nodes.
+Expected cost to goal: 108.61773962718385
+334.730391 seconds (4.23 G allocations: 88.592 GiB, 8.35% gc time)
+(113.64, 7.241328388965441, 109.144, 4.579982558944984, 4.496, 4.8240289442804185)

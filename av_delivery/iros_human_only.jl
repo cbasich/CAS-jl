@@ -44,7 +44,7 @@ end
 function run_human_only()
     D = build_model()
     H = build_cas(D, [0], ['⊘', '∅'])
-
+    saved_results = []
     tasks = [v for (k,v) in fixed_routes]
     w = WorldState(2, "day", "sunny")
     episode = 1
@@ -55,7 +55,8 @@ function run_human_only()
         println(episode, "   |   Task: $init --> $goal")
         results = simulate_human_only(H, 1000)
         println(results)
-
+        push!(saved_results, results)
+        save_object(joinpath(abspath(@__DIR__), "HUMANONLY_results.jld2"), saved_results)
         episode += 1
     end
 end

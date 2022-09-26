@@ -24,8 +24,8 @@ function simulate_sosas(M::SOSAS, num_runs)
         human_cost = 0.
         while !terminal(M, state) && episode_cost < 1000.0
             s = M.SIndex[state]
-            # a = solve(L, M, s)[1]
-            a = rand(1:2)
+            a = solve(L, M, s)[1]
+            # a = rand(1:2)
             action = A[a]
             # println("Operator $action taking action $action in state $state.")
             # println(episode_cost)

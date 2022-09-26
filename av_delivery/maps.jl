@@ -257,18 +257,18 @@ fixed_routes = Dict(
     "UMass South to Northampton" => (72, 12),
     "Amherst North to UMass North" => (10, 71),
     "Amherst North to UMass South" => (10, 72),
-    "UMass North to Amherst 1" => (71, 10),
-    "UMass South to Amherst 1" => (72, 10),
-    "Amherst 2 to UMass Norht" => (11, 71),
-    "Amherst 2 to UMass South" => (11, 72),
-    "UMass North to Amherst 2" => (71, 11),
-    "UMass South to Amherst 2" => (72, 11),
+    "UMass North to Amherst North" => (71, 10),
+    "UMass South to Amherst North" => (72, 10),
+    "Amherst South to UMass North" => (11, 71),
+    "Amherst South to UMass South" => (11, 72),
+    "UMass North to Amherst South" => (71, 11),
+    "UMass South to Amherst South" => (72, 11),
     "Sunderland to UMass North" => (2, 71),
     "Sunderland to UMass South" => (2, 72),
     "UMass North to Sunderland" => (71, 2),
     "UMass South to Sunderland" => (72, 2),
-    "Amherst 1 to Sunderland" => (10, 2),
-    "Sunderland to Amherst 1" => (2, 11)
+    "Amherst North to Sunderland" => (10, 2),
+    "Sunderland to Amherst North" => (2, 11)
 )
 
 

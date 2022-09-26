@@ -1,7 +1,7 @@
 include("utils.jl")
 include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
-include("co_competence_aware_system.jl")
+include("competence_aware_system.jl")
 
 function simulate(CAS, L, num_runs)
     S, A, C = CAS.S, CAS.A, CAS.C

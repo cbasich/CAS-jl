@@ -870,7 +870,7 @@ function generate_successor(M::DomainSSP,
     end
 end
 
-function generate_successor(C::CASSSP,
+function generate_successor(C::CASSP,
                         state::CASstate,
                        action::CASaction,
                             σ::Char)

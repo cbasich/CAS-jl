@@ -637,7 +637,7 @@ function build_av()
     while init in goals
         init = rand(1:16)
     end
-    S, s₀, G = generate_states(graph, init, goals, w)
+    S, s₀, G = generate_av_states(graph, init, goals, w)
     A = generate_av_actions()
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     C = [[0. for a=1:length(A)] for s=1:length(S)]

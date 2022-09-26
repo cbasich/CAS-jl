@@ -1,0 +1,175 @@
+SOSAS EXPERIMENT 2-DAY-SUNNY
+
+Expected cost to goal: 39.97607619115331
+1   |   Task: 10 --> 72
+Solving SOSAS
+  0.912480 seconds (9.67 M allocations: 276.466 MiB)
+(42.075, 6.198047336927234, 38.956, 2.4273351552589433, 3.119, 4.409113207809398)
+LAO* expanded 2832 nodes.
+
+
+Expected cost to goal: 106.14315902928597
+2   |   Task: 2 --> 11
+Solving SOSAS
+  4.640297 seconds (61.37 M allocations: 1.572 GiB, 5.97% gc time)
+(133.931, 18.79474611378088, 109.774, 6.442703813806163, 24.157, 13.95869607793637)
+LAO* expanded 3040 nodes.
+
+
+Expected cost to goal: 119.87229932165087
+3   |   Task: 11 --> 12
+Solving SOSAS
+  6.267067 seconds (86.84 M allocations: 2.199 GiB, 6.86% gc time)
+(140.11, 11.82792457702533, 118.604, 3.588880614350953, 21.506, 9.611469416501535)
+LAO* expanded 3144 nodes.
+
+
+Expected cost to goal: 126.42869402209995
+4   |   Task: 12 --> 10
+Solving SOSAS
+  5.302092 seconds (78.07 M allocations: 1.982 GiB, 3.24% gc time)
+(168.763, 21.420963766569624, 129.82, 6.944337536714632, 38.943, 16.173104844782287)
+LAO* expanded 984 nodes.
+
+
+Expected cost to goal: 70.95708531204673
+5   |   Task: 71 --> 10
+Solving SOSAS
+  2.188737 seconds (31.51 M allocations: 816.037 MiB, 5.69% gc time)
+(87.709, 9.514454469061471, 71.792, 3.308123286650558, 15.917, 7.651055459846677)
+LAO* expanded 776 nodes.
+
+
+Expected cost to goal: 61.44829945918538
+6   |   Task: 10 --> 71
+Solving SOSAS
+  2.905749 seconds (35.54 M allocations: 956.870 MiB, 4.84% gc time)
+(74.203, 7.981070635477956, 60.12, 1.9833137758644077, 14.083, 7.097921631822339)
+LAO* expanded 1880 nodes.
+
+
+Expected cost to goal: 66.91609042120973
+7   |   Task: 72 --> 2
+Solving SOSAS
+  1.472861 seconds (19.90 M allocations: 518.174 MiB, 10.33% gc time)
+(76.133, 7.149435322137365, 67.069, 2.0548628814257808, 9.064, 6.398503328501505)
+LAO* expanded 1424 nodes.
+
+
+Expected cost to goal: 76.59455991321546
+8   |   Task: 2 --> 72
+Solving SOSAS
+  1.309562 seconds (16.29 M allocations: 431.800 MiB, 12.33% gc time)
+(87.256, 7.679807513437003, 76.056, 1.7244819041781323, 11.2, 6.885594484967251)
+LAO* expanded 2104 nodes.
+
+
+Expected cost to goal: 108.61769447603155
+9   |   Task: 12 --> 72
+Solving SOSAS
+  3.305515 seconds (49.68 M allocations: 1.239 GiB, 6.82% gc time)
+(127.436, 10.091667144022624, 108.296, 3.209156070165907, 19.14, 8.487074315123584)
+LAO* expanded 1152 nodes.
+
+
+Expected cost to goal: 57.38388528472651
+10   |   Task: 72 --> 11
+Solving SOSAS
+  2.059274 seconds (30.85 M allocations: 800.878 MiB)
+(65.525, 8.521149276065113, 55.238, 2.11892563480785, 10.287, 7.365519797127822)
+LAO* expanded 1128 nodes.
+
+
+Expected cost to goal: 66.10771121422081
+11   |   Task: 2 --> 71
+Solving SOSAS
+  1.299479 seconds (16.30 M allocations: 428.410 MiB, 10.82% gc time)
+(76.057, 9.32205190136011, 67.632, 3.568376284714, 8.425, 7.001385176834251)
+LAO* expanded 3576 nodes.
+
+
+Expected cost to goal: 139.40802191997483
+12   |   Task: 71 --> 12
+Solving SOSAS
+  6.619078 seconds (92.44 M allocations: 2.340 GiB, 4.37% gc time)
+(158.381, 11.778649140524374, 138.496, 3.1170017163453245, 19.885, 10.19164582609917)
+LAO* expanded 2184 nodes.
+
+
+Expected cost to goal: 109.99803876225644
+13   |   Task: 12 --> 11
+Solving SOSAS
+  4.170026 seconds (57.50 M allocations: 1.463 GiB, 5.15% gc time)
+(136.378, 12.292608519928725, 110.3, 3.7995310811251994, 26.078, 10.268951619681893)
+LAO* expanded 1288 nodes.
+
+
+Expected cost to goal: 81.74836917633304
+14   |   Task: 71 --> 2
+Solving SOSAS
+  1.914752 seconds (28.86 M allocations: 742.261 MiB)
+(89.752, 7.676419961376751, 82.99, 3.9554450502497898, 6.762, 5.66775788821995)
+LAO* expanded 696 nodes.
+
+
+Expected cost to goal: 39.97609314019884
+15   |   Task: 72 --> 10
+Solving SOSAS
+  0.803519 seconds (10.68 M allocations: 289.371 MiB)
+(46.843, 6.491725001376251, 38.772, 2.209275197185017, 8.071, 5.173656900657961)
+LAO* expanded 2296 nodes.
+
+
+Expected cost to goal: 106.10982967255347
+16   |   Task: 10 --> 2
+Solving SOSAS
+  7.643713 seconds (100.66 M allocations: 2.572 GiB, 4.13% gc time)
+(124.146, 12.001363119109293, 106.66, 3.7537302101363776, 17.486, 9.900496140286295)
+LAO* expanded 3440 nodes.
+
+
+Expected cost to goal: 136.66661893148705
+17   |   Task: 10 --> 12
+Solving SOSAS
+  8.072811 seconds (113.02 M allocations: 2.892 GiB, 3.26% gc time)
+(157.755, 12.819255372614606, 135.154, 4.168892378517783, 22.601, 10.490941752715)
+LAO* expanded 3272 nodes.
+
+
+Expected cost to goal: 129.00541224401888
+18   |   Task: 12 --> 71
+Solving SOSAS
+  7.937778 seconds (123.65 M allocations: 3.036 GiB, 4.29% gc time)
+(154.688, 12.149002191713285, 128.092, 2.969234304050852, 26.596, 10.815810915773525)
+LAO* expanded 1752 nodes.
+
+
+Expected cost to goal: 88.28529444456606
+19   |   Task: 71 --> 11
+Solving SOSAS
+  2.869898 seconds (40.93 M allocations: 1.046 GiB, 4.76% gc time)
+(111.309, 12.424003979187823, 87.744, 3.740113962495322, 23.565, 10.04652714661677)
+LAO* expanded 1144 nodes.
+
+
+Expected cost to goal: 77.31342032034942
+20   |   Task: 11 --> 71
+Solving SOSAS
+  5.908046 seconds (73.23 M allocations: 1.896 GiB, 5.72% gc time)
+(99.688, 11.403626559068773, 78.0, 3.66789496216201, 21.688, 9.264474431206907)
+LAO* expanded 688 nodes.
+
+
+Expected cost to goal: 57.383897939511364
+21   |   Task: 11 --> 72
+Solving SOSAS
+  2.108501 seconds (27.55 M allocations: 742.153 MiB, 4.95% gc time)
+(72.955, 9.746074130692879, 57.495, 3.7365675341062596, 15.46, 7.334316068468293)
+LAO* expanded 3512 nodes.
+
+
+Expected cost to goal: 108.61773962718385
+22   |   Task: 72 --> 12
+Solving SOSAS
+  4.516637 seconds (72.11 M allocations: 1.769 GiB, 4.95% gc time)
+(122.142, 10.91058554234725, 106.988, 2.812786477457498, 15.154, 9.353382798205669)

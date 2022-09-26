@@ -29,7 +29,7 @@ function simulate(COCAS, L, num_runs)
             episode_cost += cost
 
             σ = '⊕'
-            if action.l == 0
+            if action.l != 2
                 σ = generate_feedback(state, action, get_consistency(state.sh))
             end
             state = generate_successor(COCAS, s, a, σ)
