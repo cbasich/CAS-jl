@@ -832,6 +832,9 @@ function block_transition!(C::COCASSP,
     C.T[s+3][a] = [(s+3, 1.0)]
 end
 
+## TODO: BIG PROBLEM WE ARE ADDING IN THE DOMAIN COST EVEN WHEN THE ACTION
+#        IS DENIED OR THE REQUEST FOR TRANSFER OF CONTROL IS DENIED.
+
 function generate_costs(C::COCASSP,
                         s::Int,
                         a::Int,)
@@ -1021,25 +1024,36 @@ function reachable(C, L)
 end
 
 function compute_level_optimality(C, ℒ)
+    println("Computing level optimality...")
     total = 0
     r = 0
     lo = 0
     lo_r = 0
-    # for s in keys(ℒ.π)
+    W = vec(collect(Base.product(
+        1:1, ["day", "night"], ["sunny", "rainy", "snowy"]
+    )))
     R = reachable(C, ℒ)
-    for (s, state) in enumerate(C.S)
-        if terminal(C, state)
-            continue
-        end
-        solve(ℒ, C, s)
-        total += 1
-        # state = C.S[s]
-        action = C.A[ℒ.π[s]]
-        comp = (action.l == competence(state.state, action.action))
-        lo += comp
-        if s in R
-            r += 1
-            lo_r += comp
+    for w in W
+        println("Computing for world state $w")
+        set_route(C.𝒮.D, C, C.s₀.state.id, pop!(C.G).state.id, WorldState(w))
+        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        for (s, state) in enumerate(C.S)
+            if (terminal(C, state) || state.state.w.time != C.s₀.state.w.time ||
+                state.state.w.weather != C.s₀.state.w.weather)
+                continue
+            end
+            if state.sh == [1, 1, 2]
+                continue
+            end
+            solve(ℒ, C, s)
+            total += 1
+            action = C.A[ℒ.π[s]]
+            comp = (action.l == competence(state.state, action.action))
+            lo += comp
+            if s in R
+                r += 1
+                lo_r += comp
+            end
         end
     end
     # println("  ")
@@ -1056,6 +1070,18 @@ function build_cocas(𝒟::DomainSSP,
     𝒜 = AutonomyModel(L, κ, autonomy_cost)
 
     D = Dict{Int, Dict{String, Dict{String, DataFrame}}}()
+    for o=1:2
+        D[o] = Dict("node"=> Dict{Int, Dict{String, DataFrame}}(),
+                    "edge"=> Dict{Int, Dict{String, DataFrame}}())
+        for a in ["↑", "→", "↓", "←", "⤉"]
+            D[o]["node"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$a.csv")))
+            D[o]["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$a.csv")))
+        end
+        # D[o] = Dict("edge"=> Dict{Int, Dict{String, DataFrame}}())
+        # for a in ["↑", "⤉"]
+        #     D[o]["edge"][a] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$a.csv")))
+        # end
+    end
     λ = generate_feedback_profile(𝒟, Σ, L, D)
 
     SH = Set([i for i in x] for x in vec(collect(Base.product(1:2, 1:2, 1:2))))
