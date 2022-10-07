@@ -115,17 +115,17 @@ function run_cocas()
         push!(costs, c), push!(stds, std), push!(operative_LOs, operative_LO)
         push!(total_average_queries_to_human, average_queries + last(total_average_queries_to_human))
 
-        # if episode%5 == 0
-        println("Updating feedback profile...")
-        update_feedback_profile!(C)
-        println("Updating autonomy profile...")
-        update_autonomy_profile!(C, L)
-        println("Saving...")
-        save_data(C.𝒮.F.D)
-        save_object(joinpath(abspath(@__DIR__), "COCAS_params.jld2"), (C.𝒮.A.κ, C.𝒮.F.λ))
-        # end
+        if episode%5 == 0
+            println("Updating feedback profile...")
+            update_feedback_profile!(C)
+            println("Updating autonomy profile...")
+            update_autonomy_profile!(C, L)
+            println("Saving...")
+            save_data(C.𝒮.F.D)
+            save_object(joinpath(abspath(@__DIR__), "COCAS_params.jld2"), (C.𝒮.A.κ, C.𝒮.F.λ))
+        end
 
-        if episode == 1 || episode%10 == 0
+        if episode == 1 || episode%5 == 0
             lo_all_full, lo_visited_full = compute_level_optimality(C, visited)
             lo_reach_full, lo_reach_pol = compute_reachable_level_optimality(C, L)
             push!(los_all_full, lo_all_full)
