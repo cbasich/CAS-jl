@@ -111,7 +111,7 @@ function run_cocas()
         println("Solving...")
         @time L = solve_model(C)
         println("Simulating...")
-        c, std, operative_LO, average_queries = simulate(C, L, visited, 1)
+        c, std, operative_LO, average_queries = simulate(C, L, visited, 100)
         push!(costs, c), push!(stds, std), push!(operative_LOs, operative_LO)
         push!(total_average_queries_to_human, average_queries + last(total_average_queries_to_human))
 
