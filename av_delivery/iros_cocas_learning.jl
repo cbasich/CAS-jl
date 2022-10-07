@@ -80,7 +80,7 @@ function simulate(COCAS, L, visited, num_runs)
         empty!(L.solved)
         L.V *= 0.0
     end
-    
+
     return mean(costs), std(costs), (actions_at_comp / actions_taken), (queries / num_runs)
 end
 
@@ -143,8 +143,3 @@ function run_cocas()
 end
 
 run_cocas()
-
-cas_results = load_object(joinpath(abspath(@__DIR__), "results", "CAS_results_10_5.jld2"))
-
-scatter(x=1:300, [cas_results[1] .- results[1][1:300]])
-scatter([cas_results[3] results[3][1:61]])
