@@ -3,115 +3,148 @@ include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
 include("co_competence_aware_system.jl")
 
-function simulate(CAS, L, num_runs)
-    S, A, C = CAS.S, CAS.A, CAS.C
-    T_base = deepcopy(CAS.T)
+function simulate(COCAS, L, visited, num_runs)
+    S, A, C = COCAS.S, COCAS.A, COCAS.C
+    T_base = deepcopy(COCAS.T)
     costs = Vector{Float64}()
-    signal_count, actions_taken, actions_at_comp = 0, 0, 0
-
+    signal_count, actions_taken, actions_at_comp, queries = 0, 0, 0, 0
     operator_state = generate_random_operator_state()
     for i = 1:num_runs
-        state = CAS.s₀
+        state = COCAS.s₀
         sh = operator_state
         episode_cost = 0.
 
-        while !terminal(CAS, state) && episode_cost < 1000.
-            s = CAS.SIndex[state]
-            a = solve(L, CAS, s)[1]
+        while !terminal(COCAS, state) && episode_cost < 1000.
+            s = COCAS.SIndex[state]
+            push!(visited, COCAS.𝒮.D.SIndex[state.state])
+            a = solve(L, COCAS, s)[1]
             action = A[a]
             actions_taken += 1
             actions_at_comp += (action.l == competence(state.state, action.action))
-            # println("$i   |   Taking action $action in state $state.")
+            println("$i   |   Taking action $action in state $state.")
             σ = '⊕'
             if action.l == 0 || action.l == 1
+                queries += 1
                 o = state.sh[3]
                 σ = generate_feedback(state, action, get_consistency(sh))
                 if i == num_runs
                     y = (σ == '⊕' || σ == '∅') ? 1 : 0
-                    d = hcat(get_state_features(state.state), o, action.l, y)
+                    d = hcat(get_state_features(state.state), o, y)
                     if typeof(state.state) == NodeState
-                        CAS.𝒮.F.D[o]["node"][string(action.action.value)] = record_data!(
-                            d, CAS.𝒮.F.D[o]["node"][string(action.action.value)])
+                        COCAS.𝒮.F.D[o]["node"][string(action.action.value)][action.l] = record_data!(
+                            d, COCAS.𝒮.F.D[o]["node"][string(action.action.value)][action.l])
                     else
-                        CAS.𝒮.F.D[o]["edge"][string(action.action.value)] = record_data!(
-                            d, CAS.𝒮.F.D[o]["edge"][string(action.action.value)])
+                        COCAS.𝒮.F.D[o]["edge"][string(action.action.value)][action.l] = record_data!(
+                            d, COCAS.𝒮.F.D[o]["edge"][string(action.action.value)][action.l])
                     end
                 end
             end
 
             episode_cost += C[s][a]
 
-            if σ == '⊖'
-                block_transition!(CAS, state, action)
+            if σ == '⊖' || σ == '⊘'
+                if σ == '⊖'
+                    block_transition!(COCAS, state, action)
+                    empty!(L.solved)
+                    L.V[s] = 0.0
+                end
                 TH = human_state_transition(sh, state.state, action.action, action.l)
                 sh = sample(first.(TH), aweights(last.(TH)))
-                state = COCASstate(sh, state.state, σ)
-                delete!(L.solved, s)
-                L.V[s] = 0.0
-                # L = solve_model(C)
+                w = state.state.w
+                if w.active_avs == 4
+                    w = WorldState(1, w.time, w.weather)
+                else
+                    w = WorldState(w.active_avs+1, w.time, w.weather)
+                end
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
+                state = COCASstate(sh, dstate′, σ)
+                # delete!(L.solved, s)
+                # COCAS.s₀ = state
+                # L = solve_model(COCAS)
                 continue
-            elseif σ == '⊘'
-                TH = human_state_transition(sh, state.state, action.action, action.l)
-                sh = sample(first.(TH), aweights(last.(TH)))
-                state = COCASstate(sh, state.state, σ)
             else
-                # state = generate_successor(CAS, s, a, σ)
-                state = generate_successor(CAS.𝒮.D, state, action, σ)
+                state = generate_successor(COCAS, s, a, σ)
+                # state = generate_successor(COCAS.𝒮.D, state, action, σ)
             end
         end
 
         push!(costs, episode_cost)
-        CAS.T = T_base
+        COCAS.T = T_base
+        empty!(L.solved)
+        L.V *= 0.0
     end
-
-    return mean(costs), std(costs), (actions_at_comp / actions_taken)
+    
+    return mean(costs), std(costs), (actions_at_comp / actions_taken), (queries / num_runs)
 end
 
-function run_cas()
+function run_cocas()
     tasks = load_object(joinpath(abspath(@__DIR__), "tasks.jld2"))
+    world_states = load_object(joinpath(abspath(@__DIR__), "world_states.jld2"))
     init_data()
-    los, los_r = Vector{Float64}(), Vector{Float64}()
+    los_all_full, los_visited_full = Vector{Float64}(), Vector{Float64}()
+    los_reach_full, los_reach_pol = Vector{Float64}(), Vector{Float64}()
     costs = Vector{Float64}()
     stds = Vector{Float64}()
-    total_signals_received = 0
+    operative_LOs = Vector{Float64}()
+    total_average_queries_to_human = [0]
+    visited = Set{Int}()
 
     results = []
     D = build_model()
     C = build_cocas(D, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
     for episode=1:500
-        init, goal = tasks[episode]
-        println(episode, "   |   Task: $init --> $goal")
+        init, goal = (12, 10) #tasks[episode]
+        w = WorldState(2, "day", "sunny") #world_states[episode]
+        println(episode) #, "   |   Task: $init --> $goal")
 
         println("Building models...")
-        w = generate_random_world_state()
         set_route(D, C, init, goal, w)
         generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-
 
         println("Solving...")
         @time L = solve_model(C)
         println("Simulating...")
-        c, std, percent_lo = simulate(C, L, 10)
-        push!(costs, c), push!(stds, std)
+        c, std, operative_LO, average_queries = simulate(C, L, visited, 1)
+        push!(costs, c), push!(stds, std), push!(operative_LOs, operative_LO)
+        push!(total_average_queries_to_human, average_queries + last(total_average_queries_to_human))
 
-        if episode%5 == 0
-            println("Updating feedback profile...")
-            update_feedback_profile!(C)
-            println("Updating autonomy profile...")
-            update_autonomy_profile!(C, L)
-            println("Saving...")
-            save_data(C.𝒮.F.D)
-            save_object(joinpath(abspath(@__DIR__), "COCAS_params.jld2"), (C.𝒮.A.κ, C.𝒮.F.λ))
-        end
+        # if episode%5 == 0
+        println("Updating feedback profile...")
+        update_feedback_profile!(C)
+        println("Updating autonomy profile...")
+        update_autonomy_profile!(C, L)
+        println("Saving...")
+        save_data(C.𝒮.F.D)
+        save_object(joinpath(abspath(@__DIR__), "COCAS_params.jld2"), (C.𝒮.A.κ, C.𝒮.F.λ))
+        # end
 
         if episode == 1 || episode%10 == 0
-            lo, lo_r = compute_level_optimality(C, L)
-            push!(los, lo), push!(los_r, lo_r)
-            println("LO: $lo  | $lo_r")
-            results = [costs, stds, los, los_r]
+            lo_all_full, lo_visited_full = compute_level_optimality(C, visited)
+            lo_reach_full, lo_reach_pol = compute_reachable_level_optimality(C, L)
+            push!(los_all_full, lo_all_full)
+            push!(los_visited_full, lo_visited_full)
+            push!(los_reach_full, lo_reach_full)
+            push!(los_reach_pol, lo_reach_pol)
+            # lo_all_opt = compute_level_optimality(C, L)
+            # push!(los, lo)
+            println("LO: $lo_all_full | $lo_visited_full | $lo_reach_full | $lo_reach_pol | $operative_LO")
+            results = [costs, stds, los_all_full, los_visited_full, los_reach_full,
+                       los_reach_pol, operative_LOs, total_average_queries_to_human[2:end]]
             save_object(joinpath(abspath(@__DIR__), "COCAS_results.jld2"), results)
         end
     end
 end
 
-run_cas()
+run_cocas()
+
+cas_results = load_object(joinpath(abspath(@__DIR__), "results", "CAS_results_10_5.jld2"))
+
+scatter(x=1:300, [cas_results[1] .- results[1][1:300]])
+scatter([cas_results[3] results[3][1:61]])
