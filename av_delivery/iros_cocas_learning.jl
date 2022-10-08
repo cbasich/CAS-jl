@@ -85,8 +85,8 @@ function simulate(COCAS, L, visited, num_runs)
 end
 
 function run_cocas()
-    tasks = load_object(joinpath(abspath(@__DIR__), "tasks.jld2"))
-    world_states = load_object(joinpath(abspath(@__DIR__), "world_states.jld2"))
+    #tasks = load_object(joinpath(abspath(@__DIR__), "tasks.jld2"))
+    #world_states = load_object(joinpath(abspath(@__DIR__), "world_states.jld2"))
     init_data()
     los_all_full, los_visited_full = Vector{Float64}(), Vector{Float64}()
     los_reach_full, los_reach_pol = Vector{Float64}(), Vector{Float64}()
@@ -110,6 +110,7 @@ function run_cocas()
 
         println("Solving...")
         @time L = solve_model(C)
+
         println("Simulating...")
         c, std, operative_LO, average_queries = simulate(C, L, visited, 100)
         push!(costs, c), push!(stds, std), push!(operative_LOs, operative_LO)
