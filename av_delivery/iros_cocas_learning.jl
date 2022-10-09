@@ -3,13 +3,17 @@ include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
 include("co_competence_aware_system.jl")
 
-function simulate(COCAS, L, visited, num_runs)
-    S, A, C = COCAS.S, COCAS.A, COCAS.C
-    T_base = deepcopy(COCAS.T)
+# using Infiltrator
+function simulate(𝒮, ℒ, visited, num_runs)
+    S, A, C = 𝒮.S, 𝒮.A, 𝒮.C
+    T_base = deepcopy(𝒮.T)
+    L_base = deepcopy(ℒ)
     costs = Vector{Float64}()
     signal_count, actions_taken, actions_at_comp, queries = 0, 0, 0, 0
     operator_state = generate_random_operator_state()
     for i = 1:num_runs
+        L = L_base
+        COCAS = L.M
         state = COCAS.s₀
         sh = operator_state
         episode_cost = 0.
@@ -46,7 +50,8 @@ function simulate(COCAS, L, visited, num_runs)
                 if σ == '⊖'
                     block_transition!(COCAS, state, action)
                     empty!(L.solved)
-                    L.V[s] = 0.0
+                    L.V[s] *= 0.0
+                    # @infiltrate
                 end
                 TH = human_state_transition(sh, state.state, action.action, action.l)
                 sh = sample(first.(TH), aweights(last.(TH)))
@@ -77,8 +82,9 @@ function simulate(COCAS, L, visited, num_runs)
 
         push!(costs, episode_cost)
         COCAS.T = T_base
-        empty!(L.solved)
-        L.V *= 0.0
+        L = L_base
+        # empty!(L.solved)
+        # L.V *= 0.0
     end
 
     return mean(costs), std(costs), (actions_at_comp / actions_taken), (queries / num_runs)
@@ -93,7 +99,7 @@ function run_cocas()
     costs = Vector{Float64}()
     stds = Vector{Float64}()
     operative_LOs = Vector{Float64}()
-    total_average_queries_to_human = [0]
+    total_average_queries_to_human = [0.0]
     visited = Set{Int}()
 
     results = []
@@ -106,13 +112,17 @@ function run_cocas()
 
         println("Building models...")
         set_route(D, C, init, goal, w)
-        generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        try
+            generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        catch
+            init_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        end
 
         println("Solving...")
         @time L = solve_model(C)
 
         println("Simulating...")
-        c, std, operative_LO, average_queries = simulate(C, L, visited, 100)
+        c, std, operative_LO, average_queries = simulate(C, L, visited, 10)
         push!(costs, c), push!(stds, std), push!(operative_LOs, operative_LO)
         push!(total_average_queries_to_human, average_queries + last(total_average_queries_to_human))
 
@@ -135,7 +145,8 @@ function run_cocas()
             push!(los_reach_pol, lo_reach_pol)
             # lo_all_opt = compute_level_optimality(C, L)
             # push!(los, lo)
-            println("LO: $lo_all_full | $lo_visited_full | $lo_reach_full | $lo_reach_pol | $operative_LO")
+            println("LO: $lo_all_full | $lo_visited_full | $lo_reach_full
+                                      | $lo_reach_pol | $operative_LO")
             results = [costs, stds, los_all_full, los_visited_full, los_reach_full,
                        los_reach_pol, operative_LOs, total_average_queries_to_human[2:end]]
             save_object(joinpath(abspath(@__DIR__), "COCAS_results.jld2"), results)

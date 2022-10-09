@@ -609,6 +609,7 @@ mutable struct COCASSP
     SIndex::Dict{COCASstate, Int}
     AIndex::Dict{COCASaction, Int}
     potential::Dict{Int, Dict{Int, Vector{Float64}}}
+    blocked::Dict{Int, Dict{Int, Bool}}
 end
 function COCASSP(𝒮::COCAS,
                S::Vector{COCASstate},
@@ -620,7 +621,8 @@ function COCASSP(𝒮::COCAS,
     SIndex, AIndex = generate_index_dicts(S, A)
     s_length, a_length = size(𝒮.D.S)[1], size(𝒮.D.A)[1]
     potential = Dict(s => Dict(a => [0. for i=1:3] for a=1:a_length) for s=1:s_length)
-    return COCASSP(𝒮, S, A, T, C, s₀, G, SIndex, AIndex, potential)
+    blocked = Dict(s => Dict(a => false for a=1:length(A)) for s=1:length(S))
+    return COCASSP(𝒮, S, A, T, C, s₀, G, SIndex, AIndex, potential, blocked)
 end
 
 function generate_index_dicts(S::Vector{COCASstate}, A::Vector{COCASaction})
@@ -684,7 +686,8 @@ function generate_actions(D, A)
 end
 
 function allowed(C, s::Int, a::Int)
-    return C.A[a].l <= C.𝒮.A.κ[C.𝒮.D.SIndex[C.S[s].state]][Int(ceil(a/3))]
+    return (C.A[a].l <= C.𝒮.A.κ[C.𝒮.D.SIndex[C.S[s].state]][Int(ceil(a/3))] &&
+            C.blocked[s][a] == false)
 end
 
 function generate_transitions!(𝒟, 𝒜, ℱ, C,
@@ -694,16 +697,171 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
 
     T = C.T
     κ, λ = 𝒜.κ, ℱ.λ
-    for s = 1:length(S)#(s, state) in enumerate(S)
+    S_len = length(S)
+    A_len = length(A)
+    Threads.@threads for s = 1:S_len#(s, state) in enumerate(S)
         state = S[s]
         if state.state.w.time != C.s₀.state.w.time || state.state.w.weather != C.s₀.state.w.weather
             continue
         end
-        if state.sh == [1, 1, 2]
+        if state.sh == [1, 1, 2] || state.sh == [1, 2, 2]
             continue
         end
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
-        for (a, action) in enumerate(A)
+        # for (a, action) in enumerate(A)
+        for a = 1:A_len
+            action = A[a]
+            if state.state in 𝒟.G
+                state′ = COCASstate(state.sh, state.state, '⊕')
+                T[s][a] = [(C.SIndex[state′], 1.0)]
+                continue
+            end
+
+            if (typeof(state.state) == EdgeState && !state.state.o && action.action.value == '⤉')
+                T[s][a] = [(s, 1.0)]
+                continue
+            end
+
+            base_state = state.state
+            base_action = action.action
+            base_s = 𝒟.SIndex[base_state]
+            base_a = 𝒟.AIndex[base_action]
+
+            th = ℱ.TH(state.sh, base_state, base_action, action.l)
+            w = state.state.w
+            if w.active_avs == 4
+                w = WorldState(1, w.time, w.weather)
+            else
+                w = WorldState(w.active_avs+1, w.time, w.weather)
+            end
+            t = 𝒟.T[base_s][base_a]
+            if (t == [(base_s, 1.0)]  || action.l > κ[base_s][base_a])
+                T[s][a] = Vector{Tuple{Int, Float64}}()
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l,
+                        state.state.r, w)
+                end
+                for i=1:length(th)
+                    if action.l == 2
+                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1],
+                                        dstate′, '⊕')], th[i][2]))
+                    else
+                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1],
+                                        dstate′, state.σ)], th[i][2]))
+                    end
+                end
+                continue
+            end
+
+            T[s][a] = Vector{Tuple{Int, Float64}}()
+            if action.l == 0
+                p_approval = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][0]['∅']
+                p_disapproval = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][0]['⊘']
+
+                if typeof(state.state) == EdgeState
+                    for i=1:length(th)
+                        if state.state.o && action.action.value == '⤉'
+                            dstate′ = EdgeState(state.state.u,
+                                    state.state.v, state.state.θ, false,
+                                    state.state.l, state.state.r, w)
+                            state′ = COCASstate(th[i][1], dstate′, '∅')
+                            push!(T[s][a], (C.SIndex[state′], th[i][2] * p_approval))
+                            dstate′′ = EdgeState(state.state.u, state.state.v,
+                                    state.state.θ, state.state.o, state.state.l,
+                                    state.state.r, w)
+                            push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′′, '⊘')], th[i][2] * p_disapproval))
+                        elseif !state.state.o && action.action.value == '↑'
+                            temp = []
+                            mass = 0.0
+                            for j=1:length(t)
+                                if typeof(𝒟.S[t[j][1]]) == NodeState
+                                    push!(temp, t[j])
+                                    mass += t[j][2]
+                                end
+                            end
+                            for j=1:length(temp)
+                                state′ = COCASstate(th[i][1], 𝒟.S[temp[j][1]], '∅')
+                                push!(T[s][a], (C.SIndex[state′], (temp[j][2]/mass)*p_approval*th[i][2]))
+                            end
+                            dstate′ = EdgeState(state.state.u, state.state.v,
+                                    state.state.θ, state.state.o, state.state.l,
+                                    state.state.r, w)
+                            push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′, '⊘')], th[i][2]*p_disapproval))
+                        else
+                            dstate′ = EdgeState(state.state.u, state.state.v,
+                                    state.state.θ, state.state.o, state.state.l,
+                                    state.state.r, w)
+                            push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′, '∅')], th[i][2]))
+                        end
+                    end
+                else
+                    for i = 1:length(th)
+                        for j = 1:length(t)
+                            push!(T[s][a], (C.SIndex[COCASstate(th[i][1],
+                              𝒟.S[t[j][1]], '∅')], th[i][2] * t[j][2] * p_approval))
+                        end
+                        dstate′ = NodeState(state.state.id, state.state.p,
+                            state.state.o, state.state.v, state.state.θ, w)
+                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′, '⊘')],
+                                        th[i][2] * p_disapproval))
+                    end
+                end
+            elseif action.l == 1
+                p_approve = λ[state.sh[3]][state.sh[state.sh[3]]][base_s][base_a][1]['⊕']
+                p_disapprove = 1.0 - p_approve
+                if typeof(state.state) == NodeState
+                    dstate′ = NodeState(state.state.id, state.state.p,
+                        state.state.o, state.state.v, state.state.θ, w)
+                else
+                    dstate′ = EdgeState(state.state.u, state.state.v,
+                        state.state.θ, state.state.o, state.state.l, state.state.r, w)
+                end
+                for i=1:length(th)
+                    push!(T[s][a], (C.SIndex[COCASstate(th[i][1], dstate′, '⊖')],
+                                    th[i][2] * p_disapprove))
+                    for j=1:length(t)
+                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1], 𝒟.S[t[j][1]], '⊕')],
+                                th[i][2] * t[j][2] * p_approve))
+                    end
+                end
+            else
+                for i=1:length(th)
+                    for j=1:length(t)
+                        push!(T[s][a], (C.SIndex[COCASstate(th[i][1],
+                                𝒟.S[t[j][1]], '⊕')], th[i][2] * t[j][2]))
+                        # push!(T[s][a], ((sp-1) * 4 + 4, p))
+                    end
+                end
+            end
+        end
+    end
+end
+
+function init_transitions!(𝒟, 𝒜, ℱ, C,
+                              S::Vector{COCASstate},
+                              A::Vector{COCASaction},
+                              G::Set{COCASstate})
+
+    T = C.T
+    κ, λ = 𝒜.κ, ℱ.λ
+    S_len = length(S)
+    A_len = length(A)
+    for s = 1:S_len#(s, state) in enumerate(S)
+        state = S[s]
+        if state.state.w.time != C.s₀.state.w.time || state.state.w.weather != C.s₀.state.w.weather
+            continue
+        end
+        if state.sh == [1, 1, 2] || state.sh == [1, 2, 2]
+            continue
+        end
+        T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
+        # for (a, action) in enumerate(A)
+        for a = 1:A_len
+            action = A[a]
             if state.state in 𝒟.G
                 state′ = COCASstate(state.sh, state.state, '⊕')
                 T[s][a] = [(C.SIndex[state′], 1.0)]
@@ -837,7 +995,10 @@ end
 function check_transition_validity(C)
     S, A, T = C.S, C.A, C.T
     for (s, state) in enumerate(S)
-        if state.state.w != C.s₀.state.w || state.sh == [1, 1, 2]
+        # if state.state.w != C.s₀.state.w || state.sh == [1, 1, 2]
+        #     continue
+        # end
+        if s ∉ keys(T)
             continue
         end
         for (a, action) in enumerate(A)
@@ -870,20 +1031,13 @@ function block_transition!(C::COCASSP,
                       action::COCASaction)
     state′ = COCASstate(state.sh, state.state, '⊕')
     s, a = C.SIndex[state′], C.AIndex[action]
-    # TODO: why do we not block C.T[s][a] as well? Not understanding..
     for i=0:15
-        if s+i in keys(C.T)
-            C.T[s+i][a] = [(s+i, 1.0)]
-        end
+        C.blocked[s+i][a] = true
+        # if s+i in keys(C.T)
+        #     C.T[s+i][a] = [(s+i, 1.0)]
+        # end
     end
-    # C.T[s][a] = [(s, 1.0)]
-    # C.T[s+1][a] = [(s+1, 1.0)]
-    # C.T[s+2][a] = [(s+2, 1.0)]
-    # C.T[s+3][a] = [(s+3, 1.0)]
 end
-
-## TODO: BIG PROBLEM WE ARE ADDING IN THE DOMAIN COST EVEN WHEN THE ACTION
-#        IS DENIED OR THE REQUEST FOR TRANSFER OF CONTROL IS DENIED.
 
 function generate_costs(C::COCASSP,
                         s::Int,
@@ -1069,7 +1223,7 @@ function generate_successor(M::COCASSP,
         i += 1
         if i > 1000
             println("ERROR")
-            println(s, " | ", a, " | ", σ)
+            println(s, " | ", a, " | ", sh, " | ", σ)
             @assert false
         end
     end
@@ -1227,7 +1381,7 @@ function build_cocas(𝒟::DomainSSP,
     costs = [[0. for a=1:length(A)] for s=1:length(S)]
     C = COCASSP(𝒮, S, A, T, costs, s₀, G)
     generate_costs!(C)
-    generate_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
+    init_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
     check_transition_validity(C)
     return C
 end

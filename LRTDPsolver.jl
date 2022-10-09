@@ -15,7 +15,7 @@ end
 
 function lookahead(solver, s, a)
     q, V, H, M, T = 0., solver.V, solver.H, solver.M, solver.M.T[s][a]
-    for i = 1:length(T)
+    Threads.@threads for i = 1:length(T)
     # for (sp, p) in T
         if haskey(solver.π, T[i][1])
             q += T[i][2] * V[T[i][1]]
@@ -31,7 +31,7 @@ end
 
 function backup(solver, s)
     # println(s)
-    for a = 1:length(solver.M.A)
+    Threads.@threads for a = 1:length(solver.M.A)
         if !allowed(solver.M, s, a)
             solver.Q[a] = max(solver.dead_end_cost, lookahead(solver, s, a))
             # println(a)
