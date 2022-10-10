@@ -71,6 +71,9 @@ function generate_successor(T)
             return T[i][1]
         end
     end
+    if round(thresh; digits=5) == 1.0
+        return last(T)[1]
+    end
     println(T)
     println("No successor found")
 end

@@ -35,11 +35,11 @@ function simulate(𝒮, ℒ, visited, num_runs)
                     y = (σ == '⊕' || σ == '∅') ? 1 : 0
                     d = hcat(get_state_features(state.state), o, y)
                     if typeof(state.state) == NodeState
-                        COCAS.𝒮.F.D[o]["node"][string(action.action.value)][action.l] = record_data!(
-                            d, COCAS.𝒮.F.D[o]["node"][string(action.action.value)][action.l])
+                        𝒮.𝒮.F.D[o]["node"][string(action.action.value)][action.l] = record_data!(
+                            d, 𝒮.𝒮.F.D[o]["node"][string(action.action.value)][action.l])
                     else
-                        COCAS.𝒮.F.D[o]["edge"][string(action.action.value)][action.l] = record_data!(
-                            d, COCAS.𝒮.F.D[o]["edge"][string(action.action.value)][action.l])
+                        𝒮.𝒮.F.D[o]["edge"][string(action.action.value)][action.l] = record_data!(
+                            d, 𝒮.𝒮.F.D[o]["edge"][string(action.action.value)][action.l])
                     end
                 end
             end
@@ -105,7 +105,7 @@ function run_cocas()
     results = []
     D = build_model()
     C = build_cocas(D, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
-    for episode=1:500
+    for episode=1:200
         init, goal = (12, 10) #tasks[episode]
         w = WorldState(2, "day", "sunny") #world_states[episode]
         println(episode) #, "   |   Task: $init --> $goal")

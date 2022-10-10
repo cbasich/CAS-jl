@@ -1364,7 +1364,7 @@ function build_cocas(𝒟::DomainSSP,
         end
     end
 
-    if isdir(joinpath(abspath(@__DIR__), "COCAS_params.jld2"))
+    if isfile(joinpath(abspath(@__DIR__), "COCAS_params.jld2"))
         κ, λ = load_object(joinpath(abspath(@__DIR__), "COCAS_params.jld2"))
     else
         κ = generate_autonomy_profile(𝒟)
