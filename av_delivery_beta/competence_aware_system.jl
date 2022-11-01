@@ -57,23 +57,6 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            # κ[s][a] = competence(state, action)
-            # if typeof(state) == EdgeState && action.value == '↑'
-            #     if state.r == "None"
-            #         κ[s][a] = 2
-            #     else
-            #         κ[s][a] = 0
-            #     end
-            # else
-            #     if typeof(state) == NodeState && action.value == '⤉'
-            #         κ[s][a] = 2
-            #     elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
-            #         κ[s][a] = 2
-            #     else
-            #         κ[s][a] = 1
-            #     end
-            # end
-
             # LEARNED COMPETENCE REVISED
             if typeof(state) == NodeState && action.value == '⤉'
                 κ[s][a] = 2
@@ -118,7 +101,7 @@ function update_cas_autonomy_profile!(C, ℒ)
             i = sample(aweights(distr))
 
             if L[i] == 2
-                if C.𝒮.F.λ[s][a][1]['∅'] < 0.95 || competence(state, action) == 0
+                if C.𝒮.F.λ[s][a][1]['⊕'] < 0.95 || competence(state, action) == 0
                     C.potential[s][a][L[i] + 1] = 0.0
                     continue
                 end
@@ -188,12 +171,10 @@ function competence(state::DomainState,
 end
 
 function save_autonomy_profile(κ)
-    # JLD2.save(joinpath(abspath(@__DIR__),"params.jld2"), "κ", κ)
     save_object(joinpath(abspath(@__DIR__),"params.jld2"), κ)
 end
 
 function load_autonomy_profile()
-    # return load(joinpath(abspath(@__DIR__), "params.jld2"), "κ")
     return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
 end
 
@@ -205,7 +186,7 @@ function autonomy_cost(state::CASstate)
             return 10.0
         else
             return 2.0 * (state.state.w.active_avs-1.0) + 2.0
-        end #1.0
+        end
     else
         return 2.0
     end
@@ -275,61 +256,15 @@ function human_state_transition(sh, s, a, l)
     return T
 end
 
-# function human_state_transition(sh, s, a, l)
-#     o1, o2, oa = sh[1], sh[2], sh[3]
-#
-#     T = Vector{Tuple{Vector, Float32}}()
-#     if o1 == 1 # Local operator available --> state is [1, x, 1]
-#         if l == 2
-#             # Local operator becomes busy (only happens if not using operator)
-#             p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
-#             # Global operator takes over.
-#             if o2 == 1
-#                 push!(T, ([2, 1, 2], p_becomes_busy * 0.75))
-#                 push!(T, ([2, 2, 2], p_becomes_busy * 0.25))
-#                 push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.75))
-#                 push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.25))
-#             else
-#                 push!(T, ([2, 1, 2], p_becomes_busy * 0.25))
-#                 push!(T, ([2, 2, 2], p_becomes_busy * 0.75))
-#                 push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
-#                 push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
-#             end
-#         else
-#             if o2 == 1
-#                 push!(T, ([1, 1, 1], 0.75))
-#                 push!(T, ([1, 2, 1], 0.25))
-#             else
-#                 push!(T, ([1, 1, 1], 0.25))
-#                 push!(T, ([1, 2, 1], 0.75))
-#             end
-#         end
-#     else # Local operator unavailable --> state is [2, x, 2]
-#         p_becomes_active = (0.5)^s.w.active_avs
-#         if o2 == 1
-#             push!(T, ([1, 1, 1], p_becomes_active * 0.75))
-#             push!(T, ([1, 2, 1], p_becomes_active * 0.25))
-#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.75))
-#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.25))
-#         else
-#             push!(T, ([1, 1, 1], p_becomes_active * 0.25))
-#             push!(T, ([1, 2, 1], p_becomes_active * 0.75))
-#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.25))
-#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.75))
-#         end
-#     end
-#     return T
-# end
-
 function get_consistency(sh)
     o1, o2, oa = sh[1],sh[2],sh[3]
     if oa == 1
         return 1.0
     else
         if o2 == 1
-            return 0.9
-        else
             return 0.8
+        else
+            return 0.6
         end
     end
 end
@@ -351,67 +286,10 @@ function generate_cas_feedback_profile(𝒟::DomainSSP,
                                        L::Vector{Int},
                                        D::Dict{String, Dict{String, Dict{Int, DataFrame}}})
     S, A = 𝒟.S, 𝒟.A
-    λ = Dict(s => Dict(a => Dict(l => Dict(σ => 0.5 for σ ∈ Σ)
-                                                    for l=0:1)
-                                                    for a=1:length(A))
-                                                    for s=1:length(S))
-
-    # Threads.@threads for s=1:length(S)
-    #     state = S[s]
-    #     for a=1:length(A)
-    #         action = A[a]
-    #         for l=0:1
-    #             σ = generate_feedback(COCASstate([2,1,2],state,'∅'), COCASaction(action,l), 1.0)
-    #             if σ == '⊕'
-    #                 λ[s][a][l]['⊕'] = .8333
-    #                 λ[s][a][l]['⊖'] = 1. - .8333
-    #             elseif σ == '⊖'
-    #                 λ[s][a][l]['⊕'] = 1. - .8333
-    #                 λ[s][a][l]['⊖'] = .8333
-    #             elseif σ == '∅'
-    #                 λ[s][a][l]['∅'] = .8333
-    #                 λ[s][a][l]['⊘'] = 1. - .8333
-    #             else
-    #                 λ[s][a][l]['∅'] = 0.
-    #                 λ[s][a][l]['⊘'] = 1.
-    #             end
-    #         end
-    #     end
-    # end
-    # for (a, action) in enumerate(A)
-    #     X_n, Y_n = split_data(D["node"][string(action.value)])
-    #     M_n = build_forest(Y_n, X_n, -1, 11, 0.7, -1)
-    #     if action.value ∈ ['↑', '⤉']
-    #         X_e, Y_e = split_data(D["edge"][string(action.value)])
-    #         M_e = build_forest(Y_e, X_e, -1, 11, 0.7, -1)
-    #     end
-    #
-    #     for (s, state) in enumerate(S)
-    #         if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-    #             continue
-    #         end
-    #         f = get_state_features(state)
-    #         for l in [0,1]
-    #             if typeof(state) == NodeState
-    #                 pred = apply_forest_proba(M_n, hcat(f,l), [0,1])
-    #             else
-    #                 pred = apply_forest_proba(M_e, hcat(f,l), [0,1])
-    #             end
-    #             for σ in Σ
-    #                 if σ == '⊖' || σ == '⊘'
-    #                     λ[s][a][l][σ] = pred[1]
-    #                 else
-    #                     try
-    #                         λ[s][a][l][σ] = pred[2]
-    #                     catch
-    #                         print(s, "|", a, "|", l)
-    #                     end
-    #                 end
-    #             end
-    #         end
-    #     end
-    # end
-    return λ
+    return Dict(s => Dict(a => Dict(l => Dict(σ => 0.5 for σ ∈ Σ)
+                                                       for l=0:1)
+                                                       for a=1:length(A))
+                                                       for s=1:length(S))
 end
 
 function update_cas_feedback_profile!(C)
@@ -635,7 +513,7 @@ function generate_transitions!(𝒟, 𝒜, ℱ, C,
             continue
         end
         T[s] = Dict{Int, Vector{Tuple{Int, Float64}}}()
-        for a=1:len_A
+        for a=1:A_len
             action = A[a]
             if state.state in 𝒟.G
                 state′ = CASstate(state.state, '⊕')
@@ -942,18 +820,13 @@ function block_transition!(C::CASSP,
                        state::CASstate,
                       action::CASaction)
     state′ = CASstate(state.state, '⊕')
+    blocked = Set{Int}()
     s, a = C.SIndex[state′], C.AIndex[action]
-    # TODO: why do we not block C.T[s][a] as well? Not understanding...
     for i=0:15
         C.blocked[s+i][a] = true
-    #     if haskey(C.T, s+i)
-    #         C.T[s+i][a] = [(s+i, 1.0)]
-        # end
+        push!(blocked, (s+i))
     end
-    # C.T[s][a] = [(s, 1.0)]
-    # C.T[s+1][a] = [(s+1, 1.0)]
-    # C.T[s+2][a] = [(s+2, 1.0)]
-    # C.T[s+3][a] = [(s+3, 1.0)]
+    return blocked
 end
 
 function generate_costs(C::CASSP,
@@ -973,7 +846,6 @@ function generate_costs!(C::CASSP)
             C.C[s][a] = generate_costs(C, s, a)
         end
     end
-    # C.C = [[generate_costs(C, s, a) for a=1:length(C.A)] for s=1:length(C.S)]
 end
 
 function generate_feedback(state::CASstate,
@@ -983,11 +855,6 @@ function generate_feedback(state::CASstate,
     w = state.state.w
     # Request for ToC logic
     if action.l == 0
-        # Operator noise
-        # if rand() < 1 - get_consistency(sh)
-        #     return ['⊘', '∅'][rand(1:2)]
-        # end
-
         if sh[3] == 1 # Local operator always accepts
             return '∅'
         else
@@ -1155,6 +1022,103 @@ function generate_successor(C::CASSP,
     return state
 end
 
+function build_cas(𝒟::DomainSSP,
+                   L::Vector{Int},
+                   Σ::Vector{Char})
+    D = Dict{String, Dict{String, Dict{Int, DataFrame}}}()
+    for t in ["node", "edge"]
+        D[t] = Dict{String, Dict{Int, DataFrame}}()
+        for a in ["↑", "→", "↓", "←", "⤉"]
+            D[t][a] = Dict{Int, DataFrame}()
+            for l=0:1
+                D[t][a][l] = DataFrame(CSV.File(joinpath(abspath(@__DIR__),
+                                        "data", "level_$l", "$(t)_$a.csv")))
+            end
+        end
+    end
+
+    if isfile(joinpath(abspath(@__DIR__), "CAS_params.jld2"))
+        κ, λ = load_object(joinpath(abspath(@__DIR__), "CAS_params.jld2"))
+    else
+        κ = generate_autonomy_profile(𝒟)
+        λ = generate_cas_feedback_profile(𝒟, Σ, L, D)
+    end
+
+    SH = Set([i for i in x] for x in vec(collect(Base.product(1:2, 1:2, 1:2))))
+    𝒜 = AutonomyModel(L, κ, autonomy_cost)
+    ℱ = OperatorModel(SH, human_state_transition, Σ, λ, human_cost, D, 0.9)
+    𝒮 = CAS(𝒟, 𝒜, ℱ)
+    S, s₀, G = generate_states(𝒟, ℱ)
+    A = generate_actions(𝒟, 𝒜)
+    T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
+    costs = [[0. for a=1:length(A)] for s=1:length(S)]
+    C = CASSP(𝒮, S, A, T, costs, s₀, G)
+    generate_costs!(C)
+    init_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
+    check_transition_validity(C)
+    return C
+end
+
+function solve_model(C::CASSP)
+    L = solve_model(C.𝒮.D)
+    ℒ = LRTDPsolver(C, 10000., 1000, .01, Dict{Int, Int}(),
+                     false, Set{Int}(), L.V, zeros(length(C.S)),
+                                             zeros(length(C.A)))
+    solve(ℒ, C, C.SIndex[C.s₀])
+    return ℒ
+end
+
+function init_data()
+    for l=0:1
+        for action in ["←", "↑", "→", "↓", "⤉"]
+            init_cas_node_data(joinpath(abspath(@__DIR__), "data", "level_$l", "node_$action.csv"))
+            init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "level_$l", "edge_$action.csv"))
+        end
+    end
+    #
+    # init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "edge_↑.csv"))
+    # init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "edge_⤉.csv"))
+end
+
+function set_route(M, C, init, goal, w)
+    set_init!(M, init, w)
+    set_goals!(M, [goal], w)
+    generate_transitions!(M, M.graph)
+    reset_problem!(M, C)
+end
+
+function random_route(M, C)
+    init = rand([12, 1, 4, 16])
+    goals = rand(5:8, 1)
+    while init in goals
+        init = rand(1:16)
+    end
+    set_init!(M, init)
+    set_goals!(M, goal)
+    generate_transitions!(M, M.graph)
+    reset_problem!(M, C)
+end
+
+
+function get_route(M, C, L)
+    route = Vector{Int}()
+    state = C.s₀
+    while !(state ∈ C.G)
+        if typeof(state.state) == NodeState && (isempty(route) || last(route) != state.state.id)
+            push!(route, state.state.id)
+        end
+        s = C.SIndex[state]
+        # a = L.π[s]
+        a = solve(L, C, s)[1]
+        # println(state,  "     |     ", C.A[a])
+        state = generate_successor(M, state, C.A[a], '∅')
+        # sp = C.T[s][a][1][1]
+        # state = C.S[sp]
+    end
+    push!(route, state.state.id)
+    return route
+end
+
 function reachable(C, L)
     s, S = C.SIndex[C.s₀], C.S
     reachable = Set{Int}()
@@ -1271,102 +1235,6 @@ function compute_level_optimality(C, visited)
     end
 
     return float(level_optimal / total), float(level_optimal_visited / total_visited)
-end
-
-function build_cas(𝒟::DomainSSP,
-                   L::Vector{Int},
-                   Σ::Vector{Char})
-    D = Dict{String, Dict{String, Dict{Int, DataFrame}}}()
-    for t in ["node", "edge"]
-        D[t] = Dict{String, Dict{Int, DataFrame}}()
-        for a in ["↑", "→", "↓", "←", "⤉"]
-            D[t][a] = Dict{Int, DataFrame}()
-            for l=0:1
-                D[t][a][l] = DataFrame(CSV.File(joinpath(abspath(@__DIR__), "data", "level_$l", "$(t)_$a.csv")))
-            end
-        end
-    end
-
-    if isfile(joinpath(abspath(@__DIR__), "CAS_params.jld2"))
-        κ, λ = load_object(joinpath(abspath(@__DIR__), "CAS_params.jld2"))
-    else
-        κ = generate_autonomy_profile(𝒟)
-        λ = generate_cas_feedback_profile(𝒟, Σ, L, D)
-    end
-
-    SH = Set([i for i in x] for x in vec(collect(Base.product(1:2, 1:2, 1:2))))
-    𝒜 = AutonomyModel(L, κ, autonomy_cost)
-    ℱ = OperatorModel(SH, human_state_transition, Σ, λ, human_cost, D, 0.9)
-    𝒮 = CAS(𝒟, 𝒜, ℱ)
-    S, s₀, G = generate_states(𝒟, ℱ)
-    A = generate_actions(𝒟, 𝒜)
-    T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
-    costs = [[0. for a=1:length(A)] for s=1:length(S)]
-    C = CASSP(𝒮, S, A, T, costs, s₀, G)
-    generate_costs!(C)
-    init_transitions!(𝒟, 𝒜, ℱ, C, S, A, G)
-    check_transition_validity(C)
-    return C
-end
-
-function solve_model(C::CASSP)
-    L = solve_model(C.𝒮.D)
-    ℒ = LRTDPsolver(C, 10000., 1000, .01, Dict{Int, Int}(),
-                     false, Set{Int}(), L.V, zeros(length(C.S)),
-                                             zeros(length(C.A)))
-    solve(ℒ, C, C.SIndex[C.s₀])
-    return ℒ
-end
-
-function init_data()
-    for l=0:1
-        for action in ["←", "↑", "→", "↓", "⤉"]
-            init_cas_node_data(joinpath(abspath(@__DIR__), "data", "level_$l", "node_$action.csv"))
-            init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "level_$l", "edge_$action.csv"))
-        end
-    end
-    #
-    # init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "edge_↑.csv"))
-    # init_cas_edge_data(joinpath(abspath(@__DIR__), "data", "edge_⤉.csv"))
-end
-
-function set_route(M, C, init, goal, w)
-    set_init!(M, init, w)
-    set_goals!(M, [goal], w)
-    generate_transitions!(M, M.graph)
-    reset_problem!(M, C)
-end
-
-function random_route(M, C)
-    init = rand([12, 1, 4, 16])
-    goals = rand(5:8, 1)
-    while init in goals
-        init = rand(1:16)
-    end
-    set_init!(M, init)
-    set_goals!(M, goal)
-    generate_transitions!(M, M.graph)
-    reset_problem!(M, C)
-end
-
-
-function get_route(M, C, L)
-    route = Vector{Int}()
-    state = C.s₀
-    while !(state ∈ C.G)
-        if typeof(state.state) == NodeState && (isempty(route) || last(route) != state.state.id)
-            push!(route, state.state.id)
-        end
-        s = C.SIndex[state]
-        # a = L.π[s]
-        a = solve(L, C, s)[1]
-        # println(state,  "     |     ", C.A[a])
-        state = generate_successor(M, state, C.A[a], '∅')
-        # sp = C.T[s][a][1][1]
-        # state = C.S[sp]
-    end
-    push!(route, state.state.id)
-    return route
 end
 
 function debug_competence(C, L)

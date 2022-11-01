@@ -3,16 +3,19 @@ include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
 include("competence_aware_system.jl")
 using Infiltrator
-function simulate(𝒮, ℒ, visited, num_runs)
-    S, A, C, D = 𝒮.S, 𝒮.A, 𝒮.C, 𝒮.𝒮.D
-    T_base = deepcopy(𝒮.T)
-    L_base = deepcopy(ℒ)
+function simulate(CAS, L, visited, num_runs)
+    S, A, C, D = CAS.S, CAS.A, CAS.C, CAS.𝒮.D
+
+    π_base = copy(L.π)
+    solved_base = copy(L.solved)
+    H_base = copy(L.H)
+    V_base = copy(L.V)
+
     costs = Vector{Float64}()
     signal_count, actions_taken, actions_at_comp, queries = 0, 0, 0, 0
     operator_state = generate_random_operator_state()
     for i = 1:num_runs
-        L = L_base
-        CAS = L.M
+        blocked = Set{Tuple{Int, Int}}()
         state = CAS.s₀
         sh = operator_state
         episode_cost = 0.
@@ -33,16 +36,14 @@ function simulate(𝒮, ℒ, visited, num_runs)
                     y = (σ == '⊕' || σ == '∅') ? 1 : 0
                     d = hcat(get_state_features(state.state), y)
                     if typeof(state.state) == NodeState
-                        𝒮.𝒮.F.D["node"][string(action.action.value)][action.l] = record_data!(
-                            d, 𝒮.𝒮.F.D["node"][string(action.action.value)][action.l])
+                        CAS.𝒮.F.D["node"][string(action.action.value)][action.l] = record_data!(
+                            d, CAS.𝒮.F.D["node"][string(action.action.value)][action.l])
                     else
-                        𝒮.𝒮.F.D["edge"][string(action.action.value)][action.l] = record_data!(
-                            d, 𝒮.𝒮.F.D["edge"][string(action.action.value)][action.l])
+                        CAS.𝒮.F.D["edge"][string(action.action.value)][action.l] = record_data!(
+                            d, CAS.𝒮.F.D["edge"][string(action.action.value)][action.l])
                     end
                 end
             end
-
-            # episode_cost += C[s][a]
             episode_cost += D.C[D.SIndex[state.state]][D.AIndex[action.action]]
             episode_cost += CAS.𝒮.F.ρ(action)
 
@@ -64,9 +65,14 @@ function simulate(𝒮, ℒ, visited, num_runs)
             sh = sample(first.(TH), aweights(last.(TH)))
             if σ == '⊖' || σ == '⊘'
                 if σ == '⊖'
-                    block_transition!(CAS, state, action)
+                    B = block_transition!(CAS, state, action)
                     empty!(L.solved)
                     L.V[s] *= 0.0
+                    if !isempty(B)
+                        for b in B
+                            push!(blocked, (b, a))
+                        end
+                    end
                 end
                 w = state.state.w
                 if w.active_avs == 4
@@ -83,24 +89,19 @@ function simulate(𝒮, ℒ, visited, num_runs)
                         state.state.r, w)
                 end
                 state = CASstate(dstate′, σ)
-                # state = CASstate(state.state, σ)
-                # delete!(L.solved, s)
-                # L.V[s] = 0.0
                 continue
             elseif σ == '⊘'
                 state = CASstate(state.state, σ)
             else
-                # state = generate_successor(CAS.𝒮.D, state, action, σ)
                 state = generate_successor(CAS, s, a, σ)
-                # println(state)
             end
         end
 
         push!(costs, episode_cost)
-        CAS.T = T_base
-        L = L_base
-        # empty!(L.solved)
-        # L.V *= 0.0
+        L.π, L.solved, L.H, L.V = copy(π_base), copy(solved_base), copy(H_base), copy(V_base)
+        for (b,a) in blocked
+            L.M.blocked[b][a] = false
+        end
     end
 
     return mean(costs), std(costs), (actions_at_comp / actions_taken), (queries / num_runs)
@@ -108,7 +109,7 @@ end
 
 function run_cas()
     # tasks = load_object(joinpath(abspath(@__DIR__), "tasks.jld2"))
-    # world_states = load_object(joinpath(abspath(@__DIR__), "world_states.jld2"))
+    world_states = load_object(joinpath(abspath(@__DIR__), "world_states.jld2"))
     init_data()
     los_all_full, los_visited_full = Vector{Float64}(), Vector{Float64}()
     los_reach_full, los_reach_pol = Vector{Float64}(), Vector{Float64}()
@@ -122,18 +123,20 @@ function run_cas()
     D = build_model()
     C = build_cas(D, [0,1,2], ['⊕', '⊖', '⊘', '∅'])
     # for episode=1:500
-    for episode=1:300
+    for episode=2:200
         init, goal = (12, 10) #tasks[episode]
-        w = WorldState(2, "day", "sunny") #world_states[episode]
+        # w = WorldState(2, "day", "sunny")
+        w = world_states[episode]
         println(episode) #, "   |   Task: $init --> $goal")
 
         println("Building models...")
         set_route(D, C, init, goal, w)
-        try
-            generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-        catch
-            init_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
-        end
+        @time generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        # try
+        #     generate_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        # catch
+        #     init_transitions!(C.𝒮.D, C.𝒮.A, C.𝒮.F, C, C.S, C.A, C.G)
+        # end
 
         println("Solving model...")
         @time L = solve_model(C)
@@ -162,7 +165,8 @@ function run_cas()
             push!(los_reach_pol, lo_reach_pol)
             # lo_all_opt = compute_level_optimality(C, L)
             # push!(los, lo)
-            println("LO: $lo_all_full | $lo_visited_full | $lo_reach_full | $lo_reach_pol | $operative_LO")
+            println("LO: $lo_all_full | $lo_visited_full | $lo_reach_full
+                                      | $lo_reach_pol | $operative_LO")
             results = [costs, stds, los_all_full, los_visited_full, los_reach_full,
                        los_reach_pol, operative_LOs, total_average_queries_to_human[2:end]]
             save_object(joinpath(abspath(@__DIR__), "CAS_results.jld2"), results)
@@ -172,5 +176,25 @@ end
 
 run_cas()
 
-cocas_results = load_object(joinpath(abspath(@__DIR__), "results", "COCAS_results_9_27.jld2"))
-cas_results = load_object(joinpath(abspath(@__DIR__), "results", "CAS_results_9_27.jld2"))
+cas_results = load_object(joinpath(abspath(@__DIR__), "cas_results.jld2"))
+cocas_results = load_object(joinpath(abspath(@__DIR__), "COCAS_results.jld2"))
+
+savefig(scatter([last(cocas_results)[1:200] last(cas_results)],
+        [cocas_results[7][1:200] cas_results[7]], legend=:bottomright,
+        xlabel="Queries to Operators", ylabel="Level Optimality",
+        label=["CoCAS" "CAS"], guidefontsize=16, tickfontsize=12,
+        legendfontsize=16, dpi=600),
+        joinpath(abspath(@__DIR__), "plots", "level_opt_by_sig_comp.png"))
+
+savefig(plot([smooth_data(cocas_results[1][1:200],5) smooth_data(cas_results[1],5)],
+    ribbon=[smooth_data(cocas_results[2][1:200],5) smooth_data(cas_results[2],5)],
+    fillalpha=0.3, xlabel="Episode", ylabel="Average Cost", label=["CoCAS" "CAS"],
+    legend=:topright, guidefontsize=16, tickfontsize=12,
+    legendfontsize=16, linewidth=1.5, dpi=600),
+    joinpath(abspath(@__DIR__), "plots", "cost_by_episode_comp.png"))
+
+savefig(plot([last(cocas_results)[1:200] last(cas_results)], legend=:topleft,
+        xlabel="Episode", ylabel="Queries to Operators", label=["CoCAS" "CAS"],
+        linewidth=2.0, guidefontsize=16, tickfontsize=12,
+        legendfontsize=16, dpi=600),
+        joinpath(abspath(@__DIR__), "plots", "query_count_by_episode_comp.png"))
