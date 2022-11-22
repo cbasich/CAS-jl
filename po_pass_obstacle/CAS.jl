@@ -45,11 +45,51 @@ function generate_autonomy_profile(D::MDP, L::Vector{Int})
 end
 
 function competence(state::DomainState, action::DomainAction)
+    w = state.w
 
+    if state.position == 4
+        return 2
+    end
+
+    if w.weather == "snowy" && w.time == "night"
+        return 0
+    end
+
+    if (w.waiting || w.trailing) && state.priority && action.vaue != :go
+        return 0
+    end
+
+    if action.value == :stop
+        if state.position > 1 || state.oncoming < 1
+            return 0
+        else
+            return 2
+        end
+    elseif action.value == :edge
+        if state.position > 0
+            return 0
+        else
+            return 2
+        end
+    else
+        if (state.oncoming == -1 ||
+           (state.position == 0 && state.oncoming == 1 &&
+           (w.weather == "rainy" || w.time == "night")))
+           return 0
+       elseif state.concoming > 1 && !state.priority
+           return 0
+       else
+           return 2
+       end
+   end
 end
 
 function autonomy_cost(state::CASstate)
-
+    if state.σ == '∅'
+        return 0.0
+    elseif state.σ == '⊘'
+        return 10.0
+    end
 end
 
 ##
@@ -62,11 +102,20 @@ mutable struct FeedbackModel
 end
 
 function generate_feedback_profile(D::MDP, Σ::Vector{Char}, L::Vector{Int})
+    S, A = D.S, D.A
+    λ = Dict(s => Dict(a => Dict(1 => Dict(σ => 0.5 for σ ∈ Σ))
+                                                    for a=1:length(A))
+                                                    for s=1:length(S))
 
+    for (a, action) in enumerate(A)
+        for (s, state) in enumerate(S)
+            λ[s][a] = 
+        end
+    end
 end
 
 function human_cost(action::CASaction)
-
+    return [10.0 1.0 0.0][action.l + 1]
 end
 
 ##
