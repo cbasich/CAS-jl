@@ -142,8 +142,72 @@ function allowed(C::CAS, s::Int, a::Int)
     return C.A[a].l <= C.𝒮.A.κ[ceil(s/2)][ceil(a/3)] && C.blocked[s][a] == false
 end
 
-function generate_transitions()
+function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackModel,
+                              S::Vector{CASstate}, A::Vector{CASaction}, C)
+    T, κ, λ = C.T, 𝒜.κ, ℱ.λ
 
+    for (s, state) in enumerate(S)
+        for (a,action) in enumerate(A)
+            if terminal(state)
+                state′ = CASstate(state.state, '∅')
+                sp = C.SIndex[state′]
+                T[s][a][sp] = 1.0
+                continue
+            end
+
+            if state.state.position == -1
+                state′ = CASstate(last(𝒟.S), '∅')
+                sp = C.SIndex[state′]
+                T[s][a][sp] = 1.0
+                continue
+            end
+
+            base_state = state.state
+            base_action = action.action
+            base_s = 𝒟.SIndex[base_state]
+            base_a = 𝒟.AIndex[base_action]
+
+            if action.l > κ[base_s][base_a]
+                T[s][a][s] = 1.0
+                continue
+            end
+
+            t = 𝒟.T[base_s][base_a]
+            if length(t[t .== 1.0]) == 1
+                ds = t[t .== 1.0][1]
+                dstate = 𝒟.S[sp]
+                if dstate.position == -1
+                    state′ = CASstate(dstate, '∅')
+                    sp = C.SIndex[state′]
+                    T[s][a][sp] = 1.0
+                end
+                if ds == base_s
+                    T[s][a][s] = 1.0
+                    continue
+                end
+            end
+
+            if action.l == 0
+                state′ = CASstate(DomainState(4, 0, 0, state.state.w), '∅')
+                sp = C.SIndex[state′]
+                T[s][a][sp] = 1.0
+            elseif action.l == 1
+                p_override = λ[base_s][base_a][1]['⊘']
+                p_null = 1.0 - p_override
+
+                state′ = CASstate(DomainState(4, 0, 0, state.state.w), '⊘')
+                sp = C.SIndex[state′]
+                T[s][a][sp] = p_override
+                for (sp, p) in enumerate(t)
+                    T[s][a][(sp-1) * 2 + 1] = p * p_null
+                end
+            else
+                for (sp, p) in enumerate(t)
+                    T[s][a][(sp-1) * 2 + 1] = p
+                end
+            end
+        end
+    end
 end
 
 function check_transition_validity(C)
@@ -262,10 +326,13 @@ function build_cas(𝒟::MDP, L::Vector{Int}, Σ::Vector{Char})
     S, s₀ = generate_states(𝒟, ℱ)
     A = generate_actions(𝒟, 𝒜)
 
-    T = generate_transitions()
+    T = [[[0.0 for (i,_) in enumerate(S)]
+               for (j,_) in enumerate(A)]
+               for (k,_) in enumerate(S)]
     R = generate_costs()
 
     C = CASMDP(𝒮, S, A, T, R, s₀)
+    generate_transitions!(𝒟, 𝒜, ℱ, S, A, C)
     check_transition_validity(C)
 
     return C
