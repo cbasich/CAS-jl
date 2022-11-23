@@ -19,6 +19,16 @@ struct CASstate
     σ::Char
 end
 
+function ==(a::CASstate, b::CASstate)
+    return a.state == b.state && a.σ == b.σ
+end
+
+function Base.hash(a::CASstate, h::UInt)
+    h = hash(a.state, h)
+    h = hash(a.σ, h)
+    return h
+end
+
 struct CASaction
     action::DomainAction
     l::Int
@@ -55,7 +65,7 @@ function competence(state::DomainState, action::DomainAction)
         return 0
     end
 
-    if (w.waiting || w.trailing) && state.priority && action.vaue != :go
+    if (w.waiting || w.trailing) && state.priority && action.value != :go
         return 0
     end
 
@@ -76,7 +86,7 @@ function competence(state::DomainState, action::DomainAction)
            (state.position == 0 && state.oncoming == 1 &&
            (w.weather == "rainy" || w.time == "night")))
            return 0
-       elseif state.concoming > 1 && !state.priority
+       elseif state.oncoming > 1 && state.position < 3 && !state.priority
            return 0
        else
            return 2
@@ -109,9 +119,18 @@ function generate_feedback_profile(D::MDP, Σ::Vector{Char}, L::Vector{Int})
 
     for (a, action) in enumerate(A)
         for (s, state) in enumerate(S)
-            λ[s][a] = 
+            σ = generate_feedback(state, action, 1.0)
+            if σ == '∅'
+                λ[s][a][1]['∅'] = 0.95
+                λ[s][a][1]['⊘'] = 0.05
+            else
+                λ[s][a][1]['∅'] = 0.05
+                λ[s][a][1]['⊘'] = 0.95
+            end
         end
     end
+
+    return λ
 end
 
 function human_cost(action::CASaction)
@@ -123,7 +142,7 @@ end
 
 struct CAS
     D::MDP
-    A::AUtonomyModel
+    A::AutonomyModel
     F::FeedbackModel
 end
 
@@ -146,7 +165,7 @@ function CASMDP(𝒮::CAS,
                s₀::CASstate)
     SIndex, AIndex = generate_index_dicts(S, A)
     blocked = Dict(s => Dict(a => false for a=1:length(A)) for s=1:length(S))
-    return CASMDP(𝒮, S, A, T, C, s₀, G, SIndex, AIndex, blocked)
+    return CASMDP(𝒮, S, A, T, R, s₀, SIndex, AIndex, blocked)
 end
 
 function generate_index_dicts(S::Vector{CASstate}, A::Vector{CASaction})
@@ -172,7 +191,7 @@ function generate_states(D::MDP, F::FeedbackModel)
     return states, CASstate(D.s₀, '∅')
 end
 
-function terminal(C::CASSP, state::CASstate)
+function terminal(C::CASMDP, state::CASstate)
     return terminal(state.state) && state.σ == '∅'
 end
 
@@ -187,25 +206,32 @@ function generate_actions(D::MDP, A::AutonomyModel)
     return actions
 end
 
-function allowed(C::CAS, s::Int, a::Int)
+function allowed(C::CASMDP, s::Int, a::Int)
     return C.A[a].l <= C.𝒮.A.κ[ceil(s/2)][ceil(a/3)] && C.blocked[s][a] == false
 end
 
 function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackModel,
-                              S::Vector{CASstate}, A::Vector{CASaction}, C)
+                               S::Vector{CASstate}, A::Vector{CASaction}, C)
     T, κ, λ = C.T, 𝒜.κ, ℱ.λ
 
     for (s, state) in enumerate(S)
         for (a,action) in enumerate(A)
-            if terminal(state)
+            if terminal(C, state)
                 state′ = CASstate(state.state, '∅')
                 sp = C.SIndex[state′]
                 T[s][a][sp] = 1.0
                 continue
             end
 
+            if !allowed(C, s, a)
+                state′ = CASstate(DomainState(-1, -1, false, state.state.w), '⊘')
+                sp = C.SIndex[state′]
+                T[s][a][sp] = 1.0
+                continue
+            end
+
             if state.state.position == -1
-                state′ = CASstate(last(𝒟.S), '∅')
+                state′ = CASstate(DomainState(4, 0, false, state.state.w), '∅')
                 sp = C.SIndex[state′]
                 T[s][a][sp] = 1.0
                 continue
@@ -223,12 +249,13 @@ function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackMode
 
             t = 𝒟.T[base_s][base_a]
             if length(t[t .== 1.0]) == 1
-                ds = t[t .== 1.0][1]
-                dstate = 𝒟.S[sp]
+                ds = findall(==(1.0), t)[1]
+                dstate = 𝒟.S[ds]
                 if dstate.position == -1
                     state′ = CASstate(dstate, '∅')
                     sp = C.SIndex[state′]
                     T[s][a][sp] = 1.0
+                    continue
                 end
                 if ds == base_s
                     T[s][a][s] = 1.0
@@ -240,6 +267,7 @@ function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackMode
                 state′ = CASstate(DomainState(4, 0, 0, state.state.w), '∅')
                 sp = C.SIndex[state′]
                 T[s][a][sp] = 1.0
+                continue
             elseif action.l == 1
                 p_override = λ[base_s][base_a][1]['⊘']
                 p_null = 1.0 - p_override
@@ -250,6 +278,7 @@ function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackMode
                 for (sp, p) in enumerate(t)
                     T[s][a][(sp-1) * 2 + 1] = p * p_null
                 end
+                continue
             else
                 for (sp, p) in enumerate(t)
                     T[s][a][(sp-1) * 2 + 1] = p
@@ -264,7 +293,8 @@ function check_transition_validity(C)
     for (s, state) in enumerate(S)
         for (a, action) in enumerate(A)
             mass = 0.0
-            for (s′, p) in T[s][a]
+            for sp=1:length(S)
+                p = T[s][a][sp]
                 mass += p
                 if p < 0.0
                     println("Transition error at state index $s and action index $a")
@@ -279,7 +309,7 @@ function check_transition_validity(C)
                 println("State index: $s      Action index: $a")
                 println("Total probability mass of $mass.")
                 println("Transition vector is the following: $(T[s][a])")
-                println("Succ state vector: $([S[s] for (s,p) in T[s][a]])")
+                println("Succ state vector: $(findall(>(0), T[s][a])))")
                 @assert false
             end
         end
@@ -296,22 +326,21 @@ function block_transition!(C::CASMDP, state::CASstate, action::CASaction)
     return blocked
 end
 
-function generate_rewards(C::CASMDP, s::Int, a::Int)
-    D, A, F = C.𝒮.D, C.𝒮.A, C.𝒮.F
-    state, action = C.S[s], C.A[a]
-    reward = D.R[D.SIndex[state.state]][D.AIndex[action.action]]
-    reward += A.μ(state)
-    reward += F.ρ(action)
-    return cost)
+function generate_rewards(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackModel,
+                          S::Vector{CASstate}, A::Vector{CASaction})
+    rewards = [[(𝒟.R[𝒟.SIndex[state.state]][𝒟.AIndex[action.action]]
+                 - 𝒜.μ(state) - ℱ.ρ(action)) for (a, action) in enumerate(A)]
+                                              for (s, state) in enumerate(S)]
+    return rewards
 end
 
-function generate_feedback(state::DomainState, action::DomainACtion)
+function generate_feedback(state::DomainState, action::DomainAction, ϵ::Float64)
     if state.position == 4
         return '∅'
     end
 
     # Uniformly random feedback under inconsistency
-    if rand() <= 0.05
+    if rand() <= 0.1
         return ['∅', '⊘'][rand(1:2)]
     end
 
@@ -336,7 +365,7 @@ function generate_feedback(state::DomainState, action::DomainACtion)
         if state.position > 0
             return '⊘'
         else
-            return '∅''
+            return '∅'
         end
     else
         if (state.oncoming == -1 ||
@@ -378,11 +407,11 @@ function build_cas(𝒟::MDP, L::Vector{Int}, Σ::Vector{Char})
     T = [[[0.0 for (i,_) in enumerate(S)]
                for (j,_) in enumerate(A)]
                for (k,_) in enumerate(S)]
-    R = generate_costs()
+    R = generate_rewards(𝒟, 𝒜, ℱ, S, A)
 
-    C = CASMDP(𝒮, S, A, T, R, s₀)
-    generate_transitions!(𝒟, 𝒜, ℱ, S, A, C)
-    check_transition_validity(C)
+    𝒞 = CASMDP(𝒮, S, A, T, R, s₀)
+    generate_transitions!(𝒟, 𝒜, ℱ, S, A, 𝒞)
+    check_transition_validity(𝒞)
 
-    return C
+    return 𝒞
 end
