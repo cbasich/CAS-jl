@@ -206,7 +206,8 @@ function generate_transitions(S::Vector{DomainState},
             end
             continue
         end
-        if ( 2 <= state.position <= 3) && state.oncoming == 3
+        if (((2<=state.position<=3) && state.oncoming==3) ||
+            (state.position == state.oncoming == 3))
             state′ = DomainState(-1, -1, false, state.w)
             sp = index(state′, S)
             for (a, action) in enumerate(A)
@@ -227,7 +228,10 @@ function generate_transitions(S::Vector{DomainState},
             mass = 0.0
             for (sp, state′) in enumerate(S)
                 # Impossibilities
-                if state.w != state′.w
+                if state.w.weather != state′.w.weather
+                    continue
+                end
+                if state.w.time != state′.w.time
                     continue
                 end
                 if action.value == :stop && state.position != state′.position
@@ -256,6 +260,30 @@ function generate_transitions(S::Vector{DomainState},
                 end
 
                 p = 1.0
+
+                # waiting dynamics
+                if state.position == state′.position
+                    if state′.w.waiting
+                        p *= 0.8
+                    else
+                        p *= 0.2
+                    end
+                else
+                    if state′.w.waiting
+                        p *= 0.0
+                    end
+                end
+
+                # trailing dynamics
+                if state.w.trailing && !state′.w.trailing
+                    continue
+                elseif !state.w.trailing && !state′.w.trailing
+                    p *= 0.5
+                elseif !state.w.trailing && state′.w.trailing
+                    p *= 0.5
+                else
+                    p *= 1.0
+                end
 
                 # position dynamics
                 if action.value == :edge
@@ -331,16 +359,22 @@ function generate_transitions(S::Vector{DomainState},
                     elseif state′.oncoming == 3
                         p *= 0.1
                     end
+                elseif state′.position == 0 && state′.oncoming == -1
+                    p *= 1.0
                 else
-                    continue
+                    p *= 0.0
+                #     continue
                 end
+
+                # if s == 17 && a == 1 && sp == 19
+                #     @infiltrate
+                # end
 
                 if p > 0.0
                     mass += p
                     T[s][a][sp] = round(p; digits=5)
                 end
             end
-
             if mass == 0.0
                 T[s][a][s] = 1.0
             else
@@ -385,6 +419,7 @@ function check_transition_validity(ℳ::MDP)
                 println("Total probability mass of $mass.")
                 println("Transition vector is the following: $(T[s][a])")
                 # println("Succ state vector: $([S[s] for (s,p) in T[s][a]])")
+                @infiltrate
                 @assert false
             end
         end

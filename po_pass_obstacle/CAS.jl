@@ -83,7 +83,7 @@ function competence(state::DomainState, action::DomainAction)
         end
     else
         if (state.oncoming == -1 ||
-           (state.position == 0 && state.oncoming == 1 &&
+           (state.position == 1 && state.oncoming == 1 &&
            (w.weather == "rainy" || w.time == "night")))
            return 0
        elseif state.oncoming > 1 && state.position < 3 && !state.priority
@@ -98,7 +98,7 @@ function autonomy_cost(state::CASstate)
     if state.σ == '∅'
         return 0.0
     elseif state.σ == '⊘'
-        return 10.0
+        return 25.0
     end
 end
 
@@ -134,7 +134,7 @@ function generate_feedback_profile(D::MDP, Σ::Vector{Char}, L::Vector{Int})
 end
 
 function human_cost(action::CASaction)
-    return [10.0 1.0 0.0][action.l + 1]
+    return [20.0 1.0 0.0][action.l + 1]
 end
 
 ##
@@ -223,12 +223,12 @@ function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackMode
                 continue
             end
 
-            if !allowed(C, s, a)
-                state′ = CASstate(DomainState(-1, -1, false, state.state.w), '⊘')
-                sp = C.SIndex[state′]
-                T[s][a][sp] = 1.0
-                continue
-            end
+            # if !allowed(C, s, a)
+            #     state′ = CASstate(DomainState(-1, -1, false, state.state.w), '⊘')
+            #     sp = C.SIndex[state′]
+            #     T[s][a][sp] = 1.0
+            #     continue
+            # end
 
             if state.state.position == -1
                 state′ = CASstate(DomainState(4, 0, false, state.state.w), '∅')
@@ -242,10 +242,10 @@ function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackMode
             base_s = 𝒟.SIndex[base_state]
             base_a = 𝒟.AIndex[base_action]
 
-            if action.l > κ[base_s][base_a]
-                T[s][a][s] = 1.0
-                continue
-            end
+            # if action.l > κ[base_s][base_a]
+            #     T[s][a][s] = 1.0
+            #     continue
+            # end
 
             t = 𝒟.T[base_s][base_a]
             if length(t[t .== 1.0]) == 1
@@ -257,10 +257,10 @@ function generate_transitions!(𝒟::MDP, 𝒜::AutonomyModel, ℱ::FeedbackMode
                     T[s][a][sp] = 1.0
                     continue
                 end
-                if ds == base_s
-                    T[s][a][s] = 1.0
-                    continue
-                end
+                # if ds == base_s
+                #     T[s][a][s] = 1.0
+                #     continue
+                # end
             end
 
             if action.l == 0
@@ -414,4 +414,10 @@ function build_cas(𝒟::MDP, L::Vector{Int}, Σ::Vector{Char})
     check_transition_validity(𝒞)
 
     return 𝒞
+end
+
+function reset_problem!(D::MDP, C::CASMDP)
+    C.s₀ = CASstate(D.s₀, '∅')
+    generate_costs!(D)
+    generate_costs!(C)
 end
