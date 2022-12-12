@@ -29,7 +29,7 @@ time_reliability = Dict(
 #     return POPOMDP(M)
 # end
 
-## Initialize Model Parameters
+## Initialize Base Models
 # W = get_random_world_state()
 W = WorldState(false, false, "day", "sunny")
 M = build_model(W)
@@ -41,20 +41,7 @@ S = 𝒞.S
 # Generate actions
 A = 𝒞.A
 
-# POMDP Transition function
-function POMDPs.transition(𝒫::POMDP, state::CASstate, action::CASaction)
-    s, a = 𝒫.𝒞.SIndex[state], 𝒫.𝒞.AIndex[action]
-    return SparseCat(S, 𝒫.𝒞.T[s][a])
-end
-
-# POMDP Reward function
-function POMDPs.reward(𝒫::POMDP, state::CASstate, action::CASaction)
-    s, a = 𝒫.𝒞.SIndex[state], 𝒫.𝒞.AIndex[action]
-    # if !allowed(𝒫.𝒞, s, a)
-    #     return -1000.0
-    # end
-    return 𝒫.𝒞.R[s][a]
-end
+## Define POMDP state
 
 # POMDP Observation
 struct Observation
@@ -62,6 +49,27 @@ struct Observation
     trailing_seen::Bool
     oncoming_intensity::Int
     oncoming_seen::Bool
+end
+
+struct Pstate
+    s::CASstate
+    ω::Observation
+end
+
+function ==(a::Pstate, b::Pstate)
+    return a.s == b.s && a.ω == b.ω
+end
+
+function Base.hash(a::Pstate, h::UInt)
+    h = hash(a.s, h)
+    h = hash(a.ω, h)
+    return h
+end
+
+struct POPOMDP <: POMDP{Pstate, CASaction, Observation}
+    𝒞::CASMDP
+    O::Dict{Int, Dict{Int, SparseCat}}
+    OIndex::Dict{Observation, Int}
 end
 
 # Generate observation set O
@@ -84,9 +92,34 @@ function build_observations()
     return Ω
 end
 Ω = build_observations()
+POMDPs.observations(𝒫::POPOMDP) = Ω
 function index(ω::Observation)
     return OIndex[ω]
 end
+
+# Generate POMDP states
+SIndex = Dict{Pstate, Integer}()
+function build_states()
+    PS = Vector{Pstate}()
+    index_ = 1
+    for s in S
+        for ω in Ω
+            state = Pstate(s, ω)
+            push!(PS, state)
+            SIndex[state] = index_
+            index_ += 1
+        end
+    end
+    return PS
+end
+PS = build_states()
+POMDPs.states(𝒫::POPOMDP) = PS
+function index(s::Pstate)
+    return SIndex[s]
+end
+
+# Generate POMDP actions
+POMDPs.actions(𝒫::POPOMDP) = A
 
 # Generate observation function Ω
 function generate_observations()
@@ -282,17 +315,59 @@ function generate_observations()
     return O
 end
 O = generate_observations()
-function POMDPs.observation(𝒫::POMDP, action::CASaction, state::CASstate)
-    a, sp = 𝒫.𝒞.AIndex[action], 𝒫.𝒞.SIndex[state]
+function POMDPs.observation(𝒫::POPOMDP, action::CASaction, state::Pstate)
+    a, sp = 𝒫.𝒞.AIndex[action], 𝒫.𝒞.SIndex[state.s]
     return 𝒫.O[a][sp]
 end
+POMDPs.observations(𝒫::POPOMDP) = O
 
-function competence(ω::Observation, action::DomainAction, U)
-    # if length(U) == 1
-    #     return competence(U[1].state, action)
+# POMDP Transition function
+function POMDPs.transition(𝒫::POMDP, state::Pstate, action::CASaction)
+    ω = state.ω
+    T = zeros(length(states(𝒫)))
+
+    if action.l > competence(ω, action.action, state.s.state)
+        T[index(state)] = 1.0
+        return SparseCat(states(𝒫), T)
+    end
+
+    state = state.s
+    s, a = 𝒫.𝒞.SIndex[state], 𝒫.𝒞.AIndex[action]
+    P = 𝒫.𝒞.T[s][a]
+    for (sp, stateprime) in enumerate(PS)
+        ωprime = stateprime.ω
+        cstateprime = stateprime.s
+        csp = 𝒫.𝒞.SIndex[cstateprime]
+        p = P[csp]
+
+        ω_P = last.(O[a][csp])
+        p *= ω_P[obsindex(𝒫, ω)]
+
+        T[sp] = p
+    end
+    return SparseCat(states(𝒫), T)
+    # s, a = 𝒫.𝒞.SIndex[state], 𝒫.𝒞.AIndex[action]
+    # return SparseCat(S, 𝒫.𝒞.T[s][a])
+end
+
+# POMDP Reward function
+function POMDPs.reward(𝒫::POMDP, state::Pstate, action::CASaction)
+    s, a = 𝒫.𝒞.SIndex[state.s], 𝒫.𝒞.AIndex[action]
+    # if !allowed(𝒫.𝒞, s, a)
+    #     return -1000.0
     # end
+    return 𝒫.𝒞.R[s][a]
+end
 
-    state = U[1].state
+POMDPs.isterminal(𝒫::POPOMDP, state::Pstate) = terminal(𝒫.𝒞, state.s.state)
+POMDPs.initialstate(𝒫::POPOMDP) = Deterministic(Pstate(𝒫.𝒞.s₀, Observation(0, false, 0, false)))
+POMDPs.initialobs(𝒫::POPOMDP) = Observation(0, false, 0, false)
+POMDPs.stateindex(𝒫::POPOMDP, state::Pstate) = index(state)
+POMDPs.actionindex(𝒫::POPOMDP, action::CASaction) = 𝒫.𝒞.AIndex[action]
+POMDPs.obsindex(𝒫::POPOMDP, ω::Observation) = 𝒫.OIndex[ω]
+POMDPs.discount(𝒫::POPOMDP) = 0.9
+
+function competence(ω::Observation, action::DomainAction, state::DomainState)
     time = state.w.time
     weather = state.w.weather
 
@@ -308,7 +383,7 @@ function competence(ω::Observation, action::DomainAction, U)
         if state.position > 1 && (ω.oncoming_seen || ω.oncoming_intensity > 0)
             return 0
         elseif (state.position == 1 && state.w.waiting &&
-               (!ω.oncoming_seen || ω.oncoming_intensity < 2) &&
+               (!ω.oncoming_seen && ω.oncoming_intensity < 2) &&
                (ω.trailing_seen || ω.trailing_intensity == 2))
             return 0
         else
@@ -322,14 +397,17 @@ function competence(ω::Observation, action::DomainAction, U)
         end
     else
         if (state.position == 1 && (
-             (weather == "sunny" && (!ω.oncoming_seen || ω.oncoming_intensity == 0)) ||
-             (weather == "rainy" && time == "day" && !ω.oncoming_seen && ω.oncoming_intensity < 2) ||
+             (weather == "sunny" && (!ω.oncoming_seen ||
+              ω.oncoming_intensity == 0)) ||
+             (weather == "rainy" && time == "day" &&
+              !ω.oncoming_seen && ω.oncoming_intensity < 2) ||
              (!ω.oncoming_seen && ω.oncoming_intensity == 0)))
             return 2
         elseif (state.position == 2 && (
              ((weather == "sunny" || (weather == "rainy" && time == "day")) &&
              (!ω.oncoming_seen || ω.oncoming_intensity < 2)) ||
-             (weather == "snowy" && time == "day" && !ω.oncoming_seen && ω.oncoming_intensity < 2) ||
+             (weather == "snowy" && time == "day" && !ω.oncoming_seen &&
+              ω.oncoming_intensity < 2) ||
              (!ω.oncoming_seen && ω.oncoming_intensity == 0)))
             return 2
         elseif state.position == 3
@@ -340,35 +418,13 @@ function competence(ω::Observation, action::DomainAction, U)
     end
 end
 
-struct POPOMDP <: POMDP{CASstate, CASaction, Observation}
-    𝒞::CASMDP
-    O::Dict{Int, Dict{Int, SparseCat}}
-    OIndex::Dict{Observation, Int}
+function competence(ω::Observation, action::DomainAction, U::Array{Pstate,1})
+    return competence(ω, action, U[1].s.state)
 end
 
-POMDPs.states(𝒫::POPOMDP) = S
-# POMDPs.actions(𝒫::POPOMDP) = A
-# POMDPs.actions(𝒫::POPOMDP, state) = [action for action in A if
-#                         allowed(𝒫.𝒞, 𝒫.𝒞.SIndex[state], 𝒫.𝒞.AIndex[action])]
-POMDPs.actions(𝒫::POPOMDP, b::ScenarioBelief) = begin
-    ω = currentobs(b)
-    U = unique(collect(particles(b)))
-    A_ = [action for action in A if action.l <= competence(ω, action.action, U)]
-    return A_
-end
-# POMDPs.actions(𝒞::CASMDP, s) = [action for action in 𝒞.A if allowed(𝒞, 𝒞.SIndex[state], 𝒞.AIndex[action])]
-POMDPs.observations(𝒫::POPOMDP) = Ω
-POMDPs.isterminal(𝒫::POPOMDP, state::CASstate) = terminal(𝒫.𝒞, state)
-POMDPs.discount(𝒫::POPOMDP) = 0.9
-POMDPs.initialstate(𝒫::POPOMDP) = Deterministic(𝒫.𝒞.s₀)
-POMDPs.initialobs(𝒫::POPOMDP) = (0, false, 0, false)
-POMDPs.stateindex(𝒫::POPOMDP, state::CASstate) = 𝒫.𝒞.SIndex[state]
-POMDPs.actionindex(𝒫::POPOMDP, action::CASaction) = 𝒫.𝒞.AIndex[action]
-POMDPs.obsindex(𝒫::POPOMDP, ω::Observation) = 𝒫.OIndex[ω]
-𝒫 = POPOMDP(𝒞, O, OIndex)
 
 # =================== SOLVER CONFIGURATION ===================
-
+𝒫 = POPOMDP(𝒞, O, OIndex)
 @time begin
     ### SARSOP
     # solver = SARSOPSolver()
@@ -387,7 +443,7 @@ POMDPs.obsindex(𝒫::POPOMDP, ω::Observation) = 𝒫.OIndex[ω]
     # planner = BasicPOMCP.solve(solver, 𝒫)
 
     ### ARDESPOT
-    solver = DESPOTSolver(bounds = IndependentBounds(-40.0, 0.0,
+    solver = DESPOTSolver(bounds = IndependentBounds(-30.0, 0.0,
         check_terminal=true), default_action=CASaction(DomainAction(:go), 0))
     planner = ARDESPOT.solve(solver, 𝒫)
 end
@@ -396,7 +452,7 @@ begin
     rsum = 0.0
     rewards = Vector{Float64}()
     println("  ")
-    @time for i=1:100
+    @time for i=1:1
         global rsum = 0.0
 
         # W = get_random_world_state()
@@ -409,29 +465,29 @@ begin
         #     r = POMDPs.reward(𝒫, s, a)
         #     global rsum += r
         #     # println("s: $s, a: $a, o: $o, r: $r, rsum: $rsum")
-        #     if a ∉ POMDPs.actions(𝒫, o)
-        #         print("Bad action.")
-        #     end
+        #     # if a ∉ POMDPs.actions(𝒫, o)
+        #         # print("Bad action.")
+        #     # end
         #     if terminal(𝒫.𝒞, s)
         #         break
         #     end
         # end
-        println("Simulating")
+        # println("Simulating")
         ### ONLINE ###
         filter = BootstrapFilter(𝒫, 10)
         for (s,a,o,b,r,) in stepthrough(𝒫, planner, filter, "s,a,o,b,r", max_steps=100)
             # println("Step...")
             # r = POMDPs.reward(𝒫, s, a)
             global rsum += r
-            # println("s: $s, a: $a, o: $o, r: $r, rsum: $rsum, AI: $action_info")
-            # @infiltrate
+            println("s: $s, a: $a, o: $o, r: $r, rsum: $rsum, AI: $action_info")
+            @infiltrate
             if a.l > competence(o, a.action, unique(collect(particles(b))))
-                # @infiltrate
+                @infiltrate
                 print("Bad action.")
             end
 
 
-            if terminal(𝒫.𝒞, s)
+            if POMDPs.isterminal(𝒫, s)
                 # println("Terminating")
                 # println(s)
                 break
