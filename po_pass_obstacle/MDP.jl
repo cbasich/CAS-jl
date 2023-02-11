@@ -264,9 +264,9 @@ function generate_transitions(S::Vector{DomainState},
                 # waiting dynamics
                 if state.position == state′.position
                     if state′.w.waiting
-                        p *= 0.8
+                        p *= 1.0
                     else
-                        p *= 0.2
+                        p *= 0.0
                     end
                 else
                     if state′.w.waiting
@@ -291,10 +291,10 @@ function generate_transitions(S::Vector{DomainState},
                         if state′.position != 1
                             p *= 0.0
                         end
-                    elseif state.position == state′.position
-                        p *= 0.5
+                    # elseif state.position == state′.position
+                    #     p *= 0.5
                     elseif state′.position == state.position + 1
-                        p *= 0.5
+                        p *= 1.0
                     else
                         p *= 0.0
                     end
@@ -331,33 +331,33 @@ function generate_transitions(S::Vector{DomainState},
                     p *= 0.1
                 elseif state.oncoming == 1 && state′.oncoming == 2
                     p *= 0.9
-                elseif state.oncoming == 2 && state.priority
-                    if state′.oncoming != 2 || !state′.priority
-                        continue
-                    end
-                elseif state.oncoming == 2 && !state.priority
-                    if state′.oncoming == 3
-                        p *= 0.5
-                        if state′.priority
-                            continue
-                        end
-                    elseif state′.oncoming == 2
-                        p *= 0.5
-                        if !state′.priority
-                            continue
-                        end
-                    else
+                # elseif state.oncoming == 2 && state.priority
+                    # if state′.oncoming != 2 || !state′.priority
+                    #     continue
+                    # end
+                elseif state.oncoming == 2 #&& !state.priority
+                    if state′.oncoming != 3
+                    #     p *= 0.5
+                    #     if state′.priority
+                    #         continue
+                    #     end
+                    # elseif state′.oncoming == 2
+                    #     p *= 0.5
+                    #     if !state′.priority
+                    #         continue
+                    #     end
+                    # else
                         continue
                     end
                 elseif state.oncoming == 3
                     if state′.oncoming == 0
-                        p *= 0.1
+                        p *= 0.3
                     elseif state′.oncoming == 1
                         p *= 0.1
                     elseif state′.oncoming == 2
-                        p *= 0.7
+                        p *= 0.3
                     elseif state′.oncoming == 3
-                        p *= 0.1
+                        p *= 0.3
                     end
                 elseif state′.position == 0 && state′.oncoming == -1
                     p *= 1.0
