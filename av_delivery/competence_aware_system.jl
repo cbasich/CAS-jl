@@ -57,24 +57,6 @@ function generate_autonomy_profile(𝒟::DomainSSP)
     for (s, state) in enumerate(𝒟.S)
         κ[s] = Dict{Int, Int}()
         for (a, action) in enumerate(𝒟.A)
-            # κ[s][a] = competence(state, action)
-            # if typeof(state) == EdgeState && action.value == '↑'
-            #     if state.r == "None"
-            #         κ[s][a] = 2
-            #     else
-            #         κ[s][a] = 0
-            #     end
-            # else
-            #     if typeof(state) == NodeState && action.value == '⤉'
-            #         κ[s][a] = 2
-            #     elseif typeof(state) == NodeState && (!state.o && !state.p && state.v == 0)
-            #         κ[s][a] = 2
-            #     else
-            #         κ[s][a] = 1
-            #     end
-            # end
-
-            # LEARNED COMPETENCE REVISED
             if typeof(state) == NodeState && action.value == '⤉'
                 κ[s][a] = 2
             elseif typeof(state) == EdgeState && action.value == '↓'
@@ -132,10 +114,6 @@ function update_cas_autonomy_profile!(C, ℒ)
                 continue
             end
 
-            # if L[i] == competence(state, action)
-            #     println("Updated to competence: ($s, $a) | $(κ[s][a]) | $(L[i])")
-            # end
-
             C.𝒮.A.κ[s][a] = L[i]
             C.potential[s][a][L[i] + 1] = 0.0
         end
@@ -188,12 +166,10 @@ function competence(state::DomainState,
 end
 
 function save_autonomy_profile(κ)
-    # JLD2.save(joinpath(abspath(@__DIR__),"params.jld2"), "κ", κ)
     save_object(joinpath(abspath(@__DIR__),"params.jld2"), κ)
 end
 
 function load_autonomy_profile()
-    # return load(joinpath(abspath(@__DIR__), "params.jld2"), "κ")
     return load_object(joinpath(abspath(@__DIR__),"params.jld2"))
 end
 
@@ -205,7 +181,7 @@ function autonomy_cost(state::CASstate)
             return 10.0
         else
             return 2.0 * (state.state.w.active_avs-1.0) + 2.0
-        end #1.0
+        end
     else
         return 2.0
     end
@@ -274,52 +250,6 @@ function human_state_transition(sh, s, a, l)
     end
     return T
 end
-
-# function human_state_transition(sh, s, a, l)
-#     o1, o2, oa = sh[1], sh[2], sh[3]
-#
-#     T = Vector{Tuple{Vector, Float32}}()
-#     if o1 == 1 # Local operator available --> state is [1, x, 1]
-#         if l == 2
-#             # Local operator becomes busy (only happens if not using operator)
-#             p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
-#             # Global operator takes over.
-#             if o2 == 1
-#                 push!(T, ([2, 1, 2], p_becomes_busy * 0.75))
-#                 push!(T, ([2, 2, 2], p_becomes_busy * 0.25))
-#                 push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.75))
-#                 push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.25))
-#             else
-#                 push!(T, ([2, 1, 2], p_becomes_busy * 0.25))
-#                 push!(T, ([2, 2, 2], p_becomes_busy * 0.75))
-#                 push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
-#                 push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
-#             end
-#         else
-#             if o2 == 1
-#                 push!(T, ([1, 1, 1], 0.75))
-#                 push!(T, ([1, 2, 1], 0.25))
-#             else
-#                 push!(T, ([1, 1, 1], 0.25))
-#                 push!(T, ([1, 2, 1], 0.75))
-#             end
-#         end
-#     else # Local operator unavailable --> state is [2, x, 2]
-#         p_becomes_active = (0.5)^s.w.active_avs
-#         if o2 == 1
-#             push!(T, ([1, 1, 1], p_becomes_active * 0.75))
-#             push!(T, ([1, 2, 1], p_becomes_active * 0.25))
-#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.75))
-#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.25))
-#         else
-#             push!(T, ([1, 1, 1], p_becomes_active * 0.25))
-#             push!(T, ([1, 2, 1], p_becomes_active * 0.75))
-#             push!(T, ([2, 1, 2], (1.0 - p_becomes_active) * 0.25))
-#             push!(T, ([2, 2, 2], (1.0 - p_becomes_active) * 0.75))
-#         end
-#     end
-#     return T
-# end
 
 function get_consistency(sh)
     o1, o2, oa = sh[1],sh[2],sh[3]
