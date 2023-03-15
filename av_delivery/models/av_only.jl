@@ -313,10 +313,6 @@ function generate_transitions!(M::AVSSP, G)
         end
         if typeof(state) == NodeState
             for (a, action) in enumerate(A)
-                # if competence(state, action) == 0
-                #     T[s][a] = [(s, 1.0)]
-                #     continue
-                # end
                 if action.value == '←'
                     T[s][a] = left_turn_distribution(M, state, s, G, w)
                 elseif action.value == '→'
@@ -335,16 +331,7 @@ function generate_transitions!(M::AVSSP, G)
             state′ = EdgeState(state.u, state.v, state.θ,
                                state.o, state.l, state.r, w)
             for (a, action) in enumerate(A)
-                # if competence(state, action) == 0
-                #     T[s][a] = [(M.SIndex[state′], 1.0)]
-                #     continue
-                # end
                 if action.value == '↑'
-                    # if state.r != "None"
-                    #     T[s][a] = [(M.SIndex[state′], 1.0)]
-                    # else
-                    #     T[s][a] = continue_distribution(M, state, s, G, w)
-                    # end
                     T[s][a] = continue_distribution(M, state, s, G, w)
                 elseif action.value == '⤉'
                     T[s][a] = pass_obstruction_distribution(M, state, s, G, w)
@@ -464,25 +451,6 @@ function continue_distribution(M::AVSSP, state::AVState, s::Int, G::Graph, w::Wo
 
     N, E = G.nodes, G.edges
 
-    # edge = E[state.u][state.v]
-    # p_arrived = (1 / edge["length"])
-    # if edge["num lanes"] == 2
-    #     p_arrived *= 2
-    # elseif edge["num lanes"] == 3
-    #     p_arrived *= 4
-    # end
-    # p_driving = 1 - p_arrived
-    # p_obstruction = edge["obstruction probability"]
-    #
-    # mass = 0.0
-    #
-    # state′ = EdgeState(state.u, state.v, state.θ, true, edge["num lanes"], state.r, state.w)
-    # push!(T, (M.SIndex[state′], p_driving * p_obstruction))
-    # mass += p_driving * p_obstruction
-    # state′ = EdgeState(state.u, state.v, state.θ, false, edge["num lanes"], state.r, state.w)
-    # push!(T, (M.SIndex[state′], p_driving * (1 - p_obstruction)))
-    # mass += p_driving * (1 - p_obstruction)
-
     node = N[state.v]
     p_ped = node["pedestrian probability"]
     p_occl = node["occlusion probability"]
@@ -532,16 +500,9 @@ function pass_obstruction_distribution(M::AVSSP, state::AVState, s::Int, G::Grap
 end
 
 function generate_costs(M::AVSSP, s::Int, a::Int)
-    if M.S[s] in M.G #terminal(M, M.S[s])
+    if M.S[s] in M.G
         return 0.0
-    # elseif M.T[s][a] == [(s, 1.0)]
-    #     return 100.0
     else
-        # if typeof(M.S[s]) == NodeState
-        #     return 1.0
-        # else
-        #     return 0.1
-        # end
         if typeof(M.S[s]) == NodeState
             if M.A[a].value == '⤉'
                 return 1.0
@@ -565,7 +526,6 @@ function generate_costs!(M::AVSSP)
             M.C[s][a] = generate_costs(M, s, a)
         end
     end
-    # M.C = [[generate_costs(M, s, a) for a=1:length(M.A)] for s=1:length(M.S)]
 end
 
 function check_transition_validity(ℳ::AVSSP)
@@ -602,34 +562,7 @@ function generate_successor(M::AVSSP,
     end
 end
 
-# function simulate(M::AVSSP, L)
-#     S, A, C = M.S, M.A, M.C
-#     c = Vector{Float64}()
-#     # println("Expected cost to goal: $(ℒ.V[index(state, S)])")
-#     for i ∈ 1:1
-#         state = M.s₀
-#         episode_cost = 0.0
-#         while true
-#             s = M.SIndex[state]
-#             a = L.π[s]
-#             action = A[a]
-#             println("Taking action $action in state $state.")
-#             episode_cost += C(M, s, a)
-#             state = S[generate_successor(M, s, a)]
-#
-#             if terminal(M, state)
-#                 break
-#             end
-#         end
-#
-#         push!(c, episode_cost)
-#     end
-#     println("Total cumulative reward: $(round(mean(c);digits=4)) ⨦ $(std(c))")
-# end
-
 function build_av()
-    # G = generate_map(filepath)
-    # G = generate_dummy_graph()
     graph = generate_ma_graph()
     init = rand(1:16)
     goals = rand(1:16, 1)
@@ -649,11 +582,6 @@ function build_av()
 end
 
 function solve_model(M::AVSSP)
-    # ℒ = LRTDPsolver(M, 10000., 100, .001, Dict{Int, Int}(),
-    #                  false, Set{Int}(), zeros(length(M.S)),
-    #                                     zeros(length(M.A)))
-    # solve(ℒ, M, M.SIndex[M.s₀])
-    # return ℒ
     ℒ = LAOStarSolver(1000, 1000., 1.0, .001, Dict{Integer, Integer}(),
                         zeros(length(M.S)), zeros(length(M.S)),
                         zeros(length(M.S)), zeros(length(M.A)),
@@ -676,10 +604,3 @@ function quick_sim(M, L)
         state = M.S[generate_successor(M, s, a)]
     end
 end
-
-#
-# M = build_model()
-# L = solve_model(M)
-# simulate(M, L)
-#
-# main_dm()

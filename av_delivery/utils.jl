@@ -5,6 +5,7 @@ using StatsBase
 using CSV
 using DecisionTree
 using DataFrames
+using Statistics
 
 softmax(x; dims=1) = exp.(x) ./ sum(exp.(x), dims=dims)
 
@@ -15,12 +16,7 @@ function record_data(data::DataFrame, filepath, append=false)
     CSV.write(filepath, data, append=append)
 end
 function record_data!(data, df)
-    # println(df)
     df = push!(copy(df), data)
-    # catch
-    #     # println(df)
-    #     println(data)
-    # end
     return df
 end
 
@@ -48,23 +44,7 @@ function init_cas_edge_data(filepath)
         header = vec(hcat(:o, :l, :r, :a, :t, :w, :σ)))
 end
 
-# function init_edge_data(filepath)
-#     data = DataFrame(o=Bool[], l=Int[], level=Int[], σ=Bool[])
-#     for o in 0:1
-#         for n in 1:3
-#             for l in 1:2
-#                 for y in 0:1
-#                     push!(data, [o n l y])
-#                     # d = vcat(d, [o n l y])
-#                 end
-#             end
-#         end
-#     end
-#     record_data(data, filepath, false)
-# end
-
 function update_data!(C, action)
-    # D, D_full = C.𝒮.F.D[string(action.value)], C.𝒮.F.D_full[string(action.value)]
     C.𝒮.F.D[string(action.value)] = C.𝒮.F.D_full[string(action.value)][!, vec(hcat(C.𝒮.D.F_active, :σ))]
 end
 

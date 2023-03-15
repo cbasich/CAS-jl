@@ -2,7 +2,7 @@ include("utils.jl")
 include("../LAOStarSolver.jl")
 include("../LRTDPsolver.jl")
 include("competence_aware_system.jl")
-using Infiltrator
+
 function simulate(𝒮, ℒ, visited, num_runs)
     S, A, C, D = 𝒮.S, 𝒮.A, 𝒮.C, 𝒮.𝒮.D
     T_base = deepcopy(𝒮.T)
@@ -160,8 +160,6 @@ function run_cas()
             push!(los_visited_full, lo_visited_full)
             push!(los_reach_full, lo_reach_full)
             push!(los_reach_pol, lo_reach_pol)
-            # lo_all_opt = compute_level_optimality(C, L)
-            # push!(los, lo)
             println("LO: $lo_all_full | $lo_visited_full | $lo_reach_full | $lo_reach_pol | $operative_LO")
             results = [costs, stds, los_all_full, los_visited_full, los_reach_full,
                        los_reach_pol, operative_LOs, total_average_queries_to_human[2:end]]
@@ -171,6 +169,3 @@ function run_cas()
 end
 
 run_cas()
-
-cocas_results = load_object(joinpath(abspath(@__DIR__), "results", "COCAS_results_9_27.jld2"))
-cas_results = load_object(joinpath(abspath(@__DIR__), "results", "CAS_results_9_27.jld2"))

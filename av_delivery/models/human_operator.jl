@@ -75,9 +75,9 @@ function autonomy_cost(state::CASstate)
                 return 4.0 * 4.0
             else
                 return 4.0*(state.state.w.active_avs-1.0)
-            end #1.0
+            end
         else
-            return 0 #2*(max(state.state.w.active_avs,1))
+            return 0
         end
     else
         return 2.0
@@ -175,43 +175,6 @@ function generate_feedback_profile(𝒟::DomainSSP,
                                                                for s=1:length(S))
                                                                for sh=1:2)
                                                                for o=1:2)
-
-    # for o=1:2
-    #     for a=1:length(A)
-    #         for s=1:length(S)
-    #             for sh
-    # for o=1:2
-    #     for (a, action) in enumerate(A)
-    #         # X_n, Y_n = split_data(D[o]["node"][string(action.value)])
-    #         # M_n = build_forest(Y_n, X_n, -1, 10, 0.5, -1)
-    #         # if action.value ∈ ['↑', '⤉']
-    #         #     X_e, Y_e = split_data(D[o]["edge"][string(action.value)])
-    #         #     M_e = build_forest(Y_e, X_e, -1, 10, 0.5, -1)
-    #         # end
-    #         for (s, state) in enumerate(S)
-    #             if typeof(state) == EdgeState && action.value ∉ ['↑', '⤉']
-    #                 continue
-    #             end
-    #             f = get_state_features(state)
-    #             for sh=1:2
-    #                 for l=0:1
-    #                     # if typeof(state) == NodeState
-    #                     #     pred = apply_forest_proba(M_n, hcat(f,sh,l), [0,1])
-    #                     # else
-    #                     #     pred = apply_forest_proba(M_e, hcat(f,sh,l), [0,1])
-    #                     # end
-    #                     for σ in Σ
-    #                         if σ == '⊖' || σ == '⊘'
-    #                             λ[o][sh][s][a][l][σ] = 0.5 #pred[1]
-    #                         else
-    #                             λ[o][sh][s][a][l][σ] = 0.5 #pred[2]
-    #                         end
-    #                     end
-    #                 end
-    #             end
-    #         end
-    #     end
-    # end
     return λ
 end
 
@@ -425,13 +388,6 @@ end
 
 function check_transition_validity(C)
     S, A, T = C.S, C.A, C.T
-    # for (s, state) in enumerate(S)
-    #     if state.state.w.time != C.s₀.state.w.time && state.state.w.weather != C.s₀.state.w.weather
-    #         continue
-    #     end
-    #     if (state.sh[1] == 1 && state.sh[3] == 2) || (state.sh[1] == 2 && state.sh[3] == 1)
-    #         continue
-    #     end
     for s in keys(T)
         for (a, action) in enumerate(A)
             mass = 0.0
@@ -451,7 +407,7 @@ function check_transition_validity(C)
                 println("Total probability mass of $mass.")
                 println("Transition vector is the following: $(T[s][a])")
                 println("Succ state vector: $([S[s] for (s,p) in T[s][a]])")
-                # @assert false
+                @assert false
                 return
             end
         end
@@ -463,7 +419,6 @@ function block_transition!(C::CASSP,
                       action::CASaction)
     state′ = CASstate(state.sh, state.state, '⊘')
     s, a = C.SIndex[state′], C.AIndex[action]
-    # TODO: why do we not block C.T[s][a] as well? Not understanding...
     C.T[s][a] = [(s, 1.0)]
     C.T[s+1][a] = [(s+1, 1.0)]
 end
@@ -528,59 +483,6 @@ function generate_feedback(state::CASstate,
             end
         end
     end
-    #
-    # if typeof(state.state) == EdgeState && !state.state.o && action.action.value == '↑'
-    #   return (action.l == 1) ? '⊕' : '∅'
-    # end
-    #
-    # if rand() < 1 - get_consistency(state.sh)
-    #     return ['⊕', '⊖'][rand(1:2)]
-    # end
-    #
-    # if state.sh[3] == 2
-    #     if state.sh[2] == 1
-    #         if (state.state.w.time == "night" && state.state.w.weather == "snowy")
-    #             return '⊘'
-    #         end
-    #     else
-    #         if (state.state.w.time == "night" && state.state.w.weather == "rainy" ||
-    #             state.state.w.weather == "snowy")
-    #             return '⊘'
-    #         end
-    #     end
-    # end
-    #
-    # if typeof(state.state) == EdgeState
-    #     if state.state.o && state.state.l == 1
-    #         return '⊘'
-    #     else
-    #         return '∅'
-    #     end
-    # else
-    #     if action.action.value == '⤉'
-    #         return '∅'
-    #     elseif action.action.value == '→'
-    #         if state.state.o && state.state.p && state.state.v > 1
-    #             return '⊘'
-    #         else
-    #             return '∅'
-    #         end
-    #     else
-    #         if state.state.o
-    #             if state.state.p || state.state.v > 1
-    #                 return '⊘'
-    #             else
-    #                 return '∅'
-    #             end
-    #         else
-    #             if state.state.p && state.state.v > 2
-    #                 return '⊘'
-    #             else
-    #                 return '∅'
-    #             end
-    #         end
-    #     end
-    # end
 end
 
 function generate_successor(H::CASSP,
@@ -625,7 +527,6 @@ function compute_level_optimality(C, ℒ)
     r = 0
     lo = 0
     lo_r = 0
-    # for s in keys(ℒ.π)
     R = reachable(C, ℒ)
     for (s, state) in enumerate(C.S)
         if terminal(C, state)
@@ -642,9 +543,6 @@ function compute_level_optimality(C, ℒ)
             lo_r += comp
         end
     end
-    # println("  ")
-    # println(lo)
-    # println(total)
 
     return lo/total, lo_r/r
 end
@@ -676,12 +574,6 @@ function allowed(H, s, a)
 end
 
 function solve_model(C::CASSP)
-    # L = solve_model(C.𝒮.D)
-    # H = [L.V[M.SIndex[state.state]] for (s,state) in enumerate(C.S)]
-    # ℒ = LAOStarSolver(100000, 1000., 1.0, .001, Dict{Integer, Integer}(),
-    #                     zeros(length(C.S)), zeros(length(C.S)),
-    #                     H, zeros(length(C.A)),
-    #                     [false for i=1:length(C.S)])
     ℒ = LRTDPsolver(C, 1000., 10000, .001, Dict{Int, Int}(),
                      false, Set{Int}(), zeros(length(C.𝒮.D.S)), zeros(length(C.S)),
                                              zeros(length(C.A)))
@@ -695,9 +587,6 @@ function init_data()
             init_node_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "node_$action.csv"))
             init_edge_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_$action.csv"))
         end
-        #
-        # init_edge_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_↑.csv"))
-        # init_edge_data(joinpath(abspath(@__DIR__), "data", "operator_$o", "edge_⤉.csv"))
     end
 end
 
@@ -729,12 +618,8 @@ function get_route(M, C, L)
             push!(route, state.state.id)
         end
         s = C.SIndex[state]
-        # a = L.π[s]
         a = solve(L, C, s)[1]
-        # println(state,  "     |     ", C.A[a])
         state = generate_successor(M, state, C.A[a], '∅')
-        # sp = C.T[s][a][1][1]
-        # state = C.S[sp]
     end
     push!(route, state.state.id)
     return route
@@ -761,5 +646,3 @@ function debug_competence(C, L)
             println("-----------------------")
         end
     end
-end
-# debug_competence(C, L)

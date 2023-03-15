@@ -82,8 +82,6 @@ function set_route(M::SOSAS, init, goal, w)
     M.L1 = solve_model(AV)
     M.s₀ = H.s₀
     M.G = generate_goals(AV, H)
-    # generate_costs!(M, L1, L2)
-    # generate_transitions!(M, M.S, M.A, AV, L1, H, L2)
 end
 
 
@@ -106,30 +104,6 @@ function human_state_transition(sh, s, operator)
             push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
             push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
         end
-        # if operator == 1 # AV is Operating
-        #     # Local operator becomes busy (only happens if not using operator)
-        #     p_becomes_busy = 1.0 - (0.5)^s.w.active_avs
-        #     # Global operator takes over.
-        #     if o2 == 1
-        #         push!(T, ([2, 1, 2], p_becomes_busy * 0.75))
-        #         push!(T, ([2, 2, 2], p_becomes_busy * 0.25))
-        #         push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.75))
-        #         push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.25))
-        #     else
-        #         push!(T, ([2, 1, 2], p_becomes_busy * 0.25))
-        #         push!(T, ([2, 2, 2], p_becomes_busy * 0.75))
-        #         push!(T, ([1, 1, 1], (1.0-p_becomes_busy) * 0.25))
-        #         push!(T, ([1, 2, 1], (1.0-p_becomes_busy) * 0.75))
-        #     end
-        # else
-        #     if o2 == 1
-        #         push!(T, ([1, 1, 1], 0.75))
-        #         push!(T, ([1, 2, 1], 0.25))
-        #     else
-        #         push!(T, ([1, 1, 1], 0.25))
-        #         push!(T, ([1, 2, 1], 0.75))
-        #     end
-        # end
     else # Local operator unavailable --> state is [2, x, 2]
         p_becomes_active = (0.5)^s.w.active_avs
         if o2 == 1
@@ -197,7 +171,6 @@ function get_transition(M::SOSAS, s, a)
     if A[a].operator == 1 #AV
         av_s = AV.SIndex[state.state]
         if !L1.solved[av_s]
-            # av_a = sample(1:length(AV.A))
             av_a = solve(L1, M.AV, av_s)[1]
         else
             av_a = L1.π[av_s]
@@ -257,7 +230,7 @@ function generate_costs(M::SOSAS, L1, L2, s, a)
         else
             av_a = L1.π[av_s]
         end
-        return M.AV.C[av_s][av_a] #+ autonomy_cost(state)
+        return M.AV.C[av_s][av_a]
     else
         human_state = CASstate(state.sh, state.state, '⊘')
         human_s = M.H.SIndex[human_state]
@@ -317,9 +290,6 @@ function build_sosas(AV, L1, H, L2)
     T = Dict{Int, Dict{Int, Vector{Tuple{Int, Float64}}}}()
     costs = [[0. for a=1:length(A)] for s=1:length(S)]
     M = SOSAS(AV, L1, H, L2, S, A, T, generate_costs, s₀, G)
-    # generate_costs!(M, L1, L2)
-    # generate_transitions!(M, S, A, AV, L1, H, L2)
-    # check_transition_validity(M)
     return M
 end
 
