@@ -1,23 +1,7 @@
-import Combinatorics
-import Base: GLOBAL_RNG, isslotfilled, rand
-function rand(r, s::Set)
-    isempty(s) && throw(ArgumentError("set must be non-empty"))
-    n = length(s.dict.slots)
-    while true
-        i = rand(r, 1:n)
-        isslotfilled(s.dict, i) && return s.dict.keys[i]
-    end
-end
-rand(s::Set) = rand(Base.GLOBAL_RNG, s)
+import Base.==
+include("../scripts/maps.jl")
+include("../scripts/utils.jl")
 
-using Plots
-using DecisionTree
-using DataFrames
-using CSV
-using JLD2
-using StatsBase
-
-include("domain_model.jl")
 struct COCASstate
        sh::Vector{Int}
     state::DomainState

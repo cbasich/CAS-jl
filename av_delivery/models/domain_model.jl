@@ -1,9 +1,6 @@
 import Base.==
-
-using Statistics
-
-include("maps.jl")
-include("../LAOStarSolver.jl")
+include("../scripts/maps.jl")
+include("../scripts/utils.jl")
 
 DIRECTIONS = ['↑', '←', '↓', '→']
 function change_direction(θ1, θ2)

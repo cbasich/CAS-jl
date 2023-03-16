@@ -1,3 +1,7 @@
+import Base.==
+include("../scripts/maps.jl")
+include("../scripts/utils.jl")
+
 struct SOSASAction
     operator::Int
 end

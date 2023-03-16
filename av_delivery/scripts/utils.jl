@@ -3,9 +3,37 @@ using DataFrames
 using JLD2
 using StatsBase
 using CSV
+using Plots
 using DecisionTree
 using DataFrames
 using Statistics
+using StatsBase
+
+include("../../solvers/LAOStarSolver.jl")
+include("../../solvers/LRTDPsolver.jl")
+include("../../solvers/LRTDPsolverSOSAS.jl")
+include("../../solvers/ValueIterationSolver.jl")
+
+include("../models/domain_model.jl")
+include("../models/human_operator.jl")
+include("../models/av_only.jl")
+include("../models/so_sas.jl")
+include("../models/c_so_sas.jl")
+include("../models/competence_aware_system.jl")
+include("../models/co_competence_aware_system.jl")
+include("../models/co_competence_aware_system_fixed.jl")
+
+import Combinatorics
+import Base: GLOBAL_RNG, isslotfilled, rand
+function rand(r, s::Set)
+    isempty(s) && throw(ArgumentError("set must be non-empty"))
+    n = length(s.dict.slots)
+    while true
+        i = rand(r, 1:n)
+        isslotfilled(s.dict, i) && return s.dict.keys[i]
+    end
+end
+rand(s::Set) = rand(Base.GLOBAL_RNG, s)
 
 softmax(x; dims=1) = exp.(x) ./ sum(exp.(x), dims=dims)
 

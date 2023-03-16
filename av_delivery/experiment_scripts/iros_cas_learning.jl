@@ -1,7 +1,4 @@
-include("utils.jl")
-include("../LAOStarSolver.jl")
-include("../LRTDPsolver.jl")
-include("competence_aware_system.jl")
+include("../scripts/utils.jl")
 
 function simulate(𝒮, ℒ, visited, num_runs)
     S, A, C, D = 𝒮.S, 𝒮.A, 𝒮.C, 𝒮.𝒮.D

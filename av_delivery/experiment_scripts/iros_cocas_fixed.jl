@@ -1,7 +1,4 @@
-include("utils.jl")
-include("../LAOStarSolver.jl")
-include("../LRTDPsolver.jl")
-include("co_competence_aware_system.jl")
+include("../scripts/utils.jl")
 
 function simulate(COCAS, L, num_runs)
     S, A, C = COCAS.S, COCAS.A, COCAS.C

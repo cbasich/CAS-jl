@@ -1,7 +1,4 @@
-include("utils.jl")
-include("../LAOStarSolver.jl")
-include("../LRTDPsolver.jl")
-include("av_only.jl")
+include("../scripts/utils.jl")
 
 function simulate(AV, num_runs)
     @time L = solve_model(AV)
@@ -16,7 +13,6 @@ function simulate(AV, num_runs)
             s = AV.SIndex[state]
             a = solve(L, AV, s)[1]
             action = A[a]
-            # println("taking action $action in state $state.")
             episode_cost += C[s][a]
             state = AV.S[generate_successor(AV, s, a)]
 
@@ -30,12 +26,6 @@ function simulate(AV, num_runs)
             if episode_cost > 10000.0
                 break
             end
-        end
-
-        if terminal(AV, state)
-            # println("Reached the goal!\n\n")
-        else
-            # println("Terminated in state $state.\n\n")
         end
         push!(costs, episode_cost)
     end

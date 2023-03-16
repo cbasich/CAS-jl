@@ -1,13 +1,4 @@
-include("utils.jl")
-include("../LAOStarSolver.jl")
-include("../LRTDPsolver.jl")
-include("../LRTDPsolverSOSAS.jl")
-include("../ValueIterationSolver.jl")
-
-include("human_operator.jl")
-include("av_only.jl")
-include("c_so_sas.jl")
-
+include("../scripts/utils.jl")
 
 function simulate_sosas(M::SOSAS, num_runs)
     @time L = solve_model(M)

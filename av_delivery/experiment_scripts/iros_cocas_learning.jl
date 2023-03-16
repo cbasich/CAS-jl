@@ -1,7 +1,4 @@
-include("utils.jl")
-include("../LAOStarSolver.jl")
-include("../LRTDPsolver.jl")
-include("co_competence_aware_system.jl")
+include("../scripts/utils.jl")
 
 # using Infiltrator
 function simulate(𝒮, ℒ, visited, num_runs)

@@ -1,9 +1,4 @@
-include("utils.jl")
-include("../LAOStarSolver.jl")
-include("../LRTDPsolver.jl")
-include("av_only.jl")
-include("human_operator.jl")
-include("so_sas.jl")
+include("../scripts/utils.jl")
 
 function simulate_human_only(H, num_runs)
     @time L = solve_model(H)
